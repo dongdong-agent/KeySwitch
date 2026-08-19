@@ -161,6 +161,38 @@ body {
   color: #9ca3af;
   margin-top: 2px;
 }
+
+.reward-tag {
+  margin-top: 4px;
+  display: inline-block;
+  font-size: 11px;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.promo-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.promo-url {
+  color: #6b7280;
+  font-size: 12px;
+  max-width: 130px;
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.btn-sm {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.muted {
+  color: #c0c4cc;
+}
 .page-title {
   font-size: 20px;
   font-weight: 700;

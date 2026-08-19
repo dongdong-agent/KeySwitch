@@ -576,12 +576,16 @@ export function KeysPage() {
   const [addId, setAddId] = useState("");
   const [addValue, setAddValue] = useState("");
   const [addNote, setAddNote] = useState("");
+  const [addPromo, setAddPromo] = useState("");
+  const [addReward, setAddReward] = useState("");
   // 编辑状态：null = 未编辑；非 null = 正在编辑某 key（provider,id）
   const [editing, setEditing] = useState<{ provider: string; id: string } | null>(null);
   const [editProvider, setEditProvider] = useState("");
   const [editId, setEditId] = useState("");
   const [editValue, setEditValue] = useState("");
   const [editNote, setEditNote] = useState("");
+  const [editPromo, setEditPromo] = useState("");
+  const [editReward, setEditReward] = useState("");
 
   const load = async () => setCfg(await api.getConfig());
   useEffect(() => {
@@ -596,11 +600,15 @@ export function KeysPage() {
     setEditId(id);
     setEditValue(k?.key ?? "");
     setEditNote(k?.note ?? "");
+    setEditPromo(k?.promo_url ?? "");
+    setEditReward(k?.reward ?? "");
   };
 
   // 保存编辑
   const saveEdit = async () => {
     if (!editing) return;
+    const promo = editPromo.trim();
+    const reward = editReward.trim();
     try {
       msgOk(
         await api.editKey(
@@ -610,6 +618,8 @@ export function KeysPage() {
           editId.trim(),
           editValue.trim(),
           editNote.trim(),
+          promo || undefined,
+          reward || undefined,
         ),
       );
       setEditing(null);
@@ -644,12 +654,16 @@ export function KeysPage() {
   };
 
   const add = async () => {
+    const promo = addPromo.trim();
+    const reward = addReward.trim();
     try {
-      msgOk(await api.addKey(addProvider, addId.trim(), addValue.trim(), addNote.trim()));
+      msgOk(await api.addKey(addProvider, addId.trim(), addValue.trim(), addNote.trim(), promo || undefined, reward || undefined));
       setShowAdd(false);
       setAddId("");
       setAddValue("");
       setAddNote("");
+      setAddPromo("");
+      setAddReward("");
       await load();
     } catch (e) {
       msgErr(e);
@@ -673,7 +687,8 @@ export function KeysPage() {
             <th>Provider</th>
             <th>Key 标识</th>
             <th>Key（前缀…）</th>
-            <th>备注</th>
+            <th>备注 / 奖励</th>
+            <th>推广链接</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -694,7 +709,31 @@ export function KeysPage() {
                   <td>
                     {k.key ? `${k.key.slice(0, 8)}…${k.key.slice(-4)}` : "(空)"}
                   </td>
-                  <td>{k.note}</td>
+                  <td>
+                    {k.note}
+                    {k.reward ? <div className="reward-tag">🎁 {k.reward}</div> : null}
+                  </td>
+                  <td>
+                    {k.promo_url ? (
+                      <span className="promo-cell">
+                        <span className="promo-url" title={k.promo_url}>{k.promo_url.slice(0, 34)}…</span>
+                        <button
+                          className="btn btn-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard?.writeText(k.promo_url || "").then(
+                              () => alert("✅ 推广链接已复制"),
+                              () => alert("❌ 复制失败"),
+                            );
+                          }}
+                        >
+                          复制
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                   <td>
                     <button
                       className="btn"
@@ -748,6 +787,12 @@ export function KeysPage() {
           <Field label="备注：">
             <input value={addNote} onChange={(e) => setAddNote(e.target.value)} placeholder="谁在用/用途" />
           </Field>
+          <Field label="推广链接：">
+            <input value={addPromo} onChange={(e) => setAddPromo(e.target.value)} placeholder="https://opencode.ai/workspace/wrk_xxx/go" />
+          </Field>
+          <Field label="奖励额度：">
+            <input value={addReward} onChange={(e) => setAddReward(e.target.value)} placeholder="如：邀请送 ¥X 额度" />
+          </Field>
           <div className="row right">
             <Btn primary onClick={add}>确定</Btn>
             <Btn onClick={() => setShowAdd(false)}>取消</Btn>
@@ -777,6 +822,12 @@ export function KeysPage() {
           </Field>
           <Field label="备注：">
             <input value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="谁在用/用途" />
+          </Field>
+          <Field label="推广链接：">
+            <input value={editPromo} onChange={(e) => setEditPromo(e.target.value)} placeholder="https://opencode.ai/workspace/wrk_xxx/go" />
+          </Field>
+          <Field label="奖励额度：">
+            <input value={editReward} onChange={(e) => setEditReward(e.target.value)} placeholder="如：邀请送 ¥X 额度" />
           </Field>
           <p className="page-sub">
             修改 Provider 或标识后，引用该 key 的应用映射会同步迁移到新位置。同 Provider 内修改保持原优先级。

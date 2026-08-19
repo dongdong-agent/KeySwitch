@@ -250,7 +250,14 @@ pub fn delete_provider(name: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn add_key(provider: String, key_id: String, key_value: String, note: String) -> Result<String, String> {
+pub fn add_key(
+    provider: String,
+    key_id: String,
+    key_value: String,
+    note: String,
+    promo_url: Option<String>,
+    reward: Option<String>,
+) -> Result<String, String> {
     let mut cfg = crate::models::load_config()?;
     let p = match cfg.providers.get_mut(&provider) {
         Some(p) => p,
@@ -259,7 +266,13 @@ pub fn add_key(provider: String, key_id: String, key_value: String, note: String
     if p.keys.iter().any(|k| k.id == key_id) {
         return Err(format!("key id 已存在: {provider}/{key_id}"));
     }
-    p.keys.push(KeyItem { id: key_id.clone(), key: key_value, note });
+    p.keys.push(KeyItem {
+        id: key_id.clone(),
+        key: key_value,
+        note,
+        promo_url,
+        reward,
+    });
     crate::models::save_config(&cfg)?;
     Ok(format!("已添加 {provider}/{key_id}"))
 }
@@ -274,6 +287,8 @@ fn edit_key_inner(
     new_id: &str,
     new_value: String,
     new_note: String,
+    promo_url: Option<String>,
+    reward: Option<String>,
 ) -> Result<String, String> {
     // 目标 provider 必须存在
     if !cfg.providers.contains_key(new_provider) {
@@ -311,6 +326,8 @@ fn edit_key_inner(
         id: new_id.to_string(),
         key: new_value,
         note: new_note,
+        promo_url,
+        reward,
     };
     if let Some(tp) = cfg.providers.get_mut(new_provider) {
         if provider == new_provider {
@@ -344,6 +361,8 @@ pub fn edit_key(
     new_id: String,
     new_value: String,
     new_note: String,
+    promo_url: Option<String>,
+    reward: Option<String>,
 ) -> Result<String, String> {
     let mut cfg = crate::models::load_config()?;
     let msg = edit_key_inner(
@@ -354,6 +373,8 @@ pub fn edit_key(
         &new_id,
         new_value,
         new_note,
+        promo_url,
+        reward,
     )?;
     crate::models::save_config(&cfg)?;
     Ok(msg)
@@ -477,8 +498,8 @@ mod tests {
                 base_url: "u".into(),
                 usage_type: "percent".into(),
                 keys: vec![
-                    KeyItem { id: "k1".into(), key: "sk-a".into(), note: "".into() },
-                    KeyItem { id: "k2".into(), key: "sk-b".into(), note: "".into() },
+                    KeyItem { id: "k1".into(), key: "sk-a".into(), note: "".into(), promo_url: None, reward: None },
+                    KeyItem { id: "k2".into(), key: "sk-b".into(), note: "".into(), promo_url: None, reward: None },
                 ],
             },
         );
@@ -487,7 +508,7 @@ mod tests {
             Provider {
                 base_url: "u".into(),
                 usage_type: "percent".into(),
-                keys: vec![KeyItem { id: "k3".into(), key: "sk-c".into(), note: "".into() }],
+                keys: vec![KeyItem { id: "k3".into(), key: "sk-c".into(), note: "".into(), promo_url: None, reward: None }],
             },
         );
         let mut t = Target::default();
@@ -501,7 +522,7 @@ mod tests {
     #[test]
     fn rename_in_same_provider_keeps_priority_and_updates_mapping() {
         let mut cfg = cfg_with_two_providers();
-        let r = edit_key_inner(&mut cfg, "p1", "k1", "p1", "k1x", "sk-zz".into(), "note".into());
+        let r = edit_key_inner(&mut cfg, "p1", "k1", "p1", "k1x", "sk-zz".into(), "note".into(), None, None);
         assert!(r.is_ok(), "{r:?}");
         let keys = &cfg.providers["p1"].keys;
         assert_eq!(keys.len(), 2);
@@ -518,7 +539,7 @@ mod tests {
     #[test]
     fn move_to_another_provider_migrates_mapping() {
         let mut cfg = cfg_with_two_providers();
-        let r = edit_key_inner(&mut cfg, "p1", "k1", "p2", "k9", "sk-z".into(), "".into());
+        let r = edit_key_inner(&mut cfg, "p1", "k1", "p2", "k9", "sk-z".into(), "".into(), None, None);
         assert!(r.is_ok(), "{r:?}");
         // key 已从 p1 移除、加入 p2
         assert!(cfg.providers["p1"].keys.iter().all(|k| k.id != "k1"));
@@ -532,12 +553,12 @@ mod tests {
     fn rejects_missing_provider_conflict_and_unknown_old() {
         let mut cfg = cfg_with_two_providers();
         // 目标 provider 不存在
-        assert!(edit_key_inner(&mut cfg, "p1", "k1", "NOPE", "kx", "v".into(), "".into()).is_err());
+        assert!(edit_key_inner(&mut cfg, "p1", "k1", "NOPE", "kx", "v".into(), "".into(), None, None).is_err());
         // id 冲突：p1 内把 k2 改名为已存在的 k1
         let mut cfg2 = cfg_with_two_providers();
-        assert!(edit_key_inner(&mut cfg2, "p1", "k2", "p1", "k1", "v".into(), "".into()).is_err());
+        assert!(edit_key_inner(&mut cfg2, "p1", "k2", "p1", "k1", "v".into(), "".into(), None, None).is_err());
         // 旧 key 不存在
         let mut cfg3 = cfg_with_two_providers();
-        assert!(edit_key_inner(&mut cfg3, "p1", "ghost", "p2", "nx", "v".into(), "".into()).is_err());
+        assert!(edit_key_inner(&mut cfg3, "p1", "ghost", "p2", "nx", "v".into(), "".into(), None, None).is_err());
     }
 }

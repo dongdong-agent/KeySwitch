@@ -8,6 +8,8 @@ export interface KeyItem {
   id: string;
   key: string;
   note: string;
+  promo_url?: string | null;
+  reward?: string | null;
 }
 export interface Provider {
   base_url: string;
@@ -102,12 +104,12 @@ export const api = {
   addProvider: (name: string, baseUrl: string, usageType: string) =>
     invoke<string>("add_provider", { name, baseUrl, usageType }),
   deleteProvider: (name: string) => invoke<string>("delete_provider", { name }),
-  addKey: (provider: string, keyId: string, keyValue: string, note: string) =>
-    invoke<string>("add_key", { provider, keyId, keyValue, note }),
+  addKey: (provider: string, keyId: string, keyValue: string, note: string, promoUrl?: string, reward?: string) =>
+    invoke<string>("add_key", { provider, keyId, keyValue, note, promoUrl, reward }),
   deleteKey: (provider: string, keyId: string) =>
     invoke<string>("delete_key", { provider, keyId }),
-  editKey: (provider: string, oldId: string, newProvider: string, newId: string, newValue: string, newNote: string) =>
-    invoke<string>("edit_key", { provider, oldId, newProvider, newId, newValue, newNote }),
+  editKey: (provider: string, oldId: string, newProvider: string, newId: string, newValue: string, newNote: string, promoUrl?: string, reward?: string) =>
+    invoke<string>("edit_key", { provider, oldId, newProvider, newId, newValue, newNote, promoUrl, reward }),
   moveKey: (provider: string, keyId: string, direction: string) =>
     invoke<string>("move_key", { provider, keyId, direction }),
   addTarget: (t: Omit<Target, "mapping"> & { mapping: Record<string, string> }) =>

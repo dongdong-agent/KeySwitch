@@ -37,6 +37,12 @@ pub struct KeyItem {
     pub key: String,
     #[serde(default)]
     pub note: String,
+    /// 推广链接（如 opencode workspace URL），可选
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub promo_url: Option<String>,
+    /// 奖励额度/说明（邀请/推广赠送），可选
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reward: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -173,6 +179,8 @@ mod tests {
                     id: "k1".into(),
                     key: "sk-123".into(),
                     note: "测试".into(),
+                    promo_url: None,
+                    reward: None,
                 }],
             },
         );
@@ -206,7 +214,7 @@ mod tests {
             Provider {
                 base_url: "u".into(),
                 usage_type: "percent".into(),
-                keys: vec![KeyItem { id: "a".into(), key: "sk-x".into(), note: "".into() }],
+                keys: vec![KeyItem { id: "a".into(), key: "sk-x".into(), note: "".into(), promo_url: None, reward: None }],
             },
         );
         assert_eq!(cfg.key_value("p", "a"), "sk-x");
