@@ -49,6 +49,10 @@ pub fn smart_switch_once(
                 .get(&(pname.clone(), k.id.clone()))
                 .cloned()
                 .unwrap_or_default();
+            // 查询失败（403/网络错误）≠ 耗尽：不做候选，避免误选可能仍可用的 key
+            if u.status == "error" {
+                continue;
+            }
             if !usage::is_exhausted(cfg, pname, &u, trigger) {
                 list.push(k.id.clone());
             }
@@ -93,6 +97,10 @@ pub fn smart_switch_once(
             Some(u) => u.clone(),
             None => continue,
         };
+        // 查询失败（403/网络错误）≠ 耗尽：不触发切换，保持现状（避免误切多花钱）
+        if u.status == "error" {
+            continue;
+        }
         if !usage::is_exhausted(cfg, &provider, &u, trigger) {
             continue;
         }
