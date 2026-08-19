@@ -45,9 +45,10 @@ export interface UsageInfo {
   balance: number | null;
   status: string;
   detail: string;
-  rollingReset: string | null;
-  weeklyReset: string | null;
-  monthlyReset: string | null;
+  // 注意：Tauri 命令返回值字段是 snake_case（与入参 camelCase 相反）
+  rolling_reset: string | null;
+  weekly_reset: string | null;
+  monthly_reset: string | null;
 }
 export interface KeyStatus {
   provider: string;

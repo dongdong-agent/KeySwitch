@@ -218,11 +218,11 @@ export function OverviewPage() {
                       <>
                         <div className="card-big">
                           {s.usage.detail}
-                          {s.usage.weekly && s.usage.weeklyReset ? (
-                            <span className="reset-tag">周重置{fmtReset(s.usage.weeklyReset)}</span>
+                          {s.usage.weekly && s.usage.weekly_reset ? (
+                            <span className="reset-tag">周重置{fmtReset(s.usage.weekly_reset)}</span>
                           ) : null}
-                          {s.usage.monthly && s.usage.monthlyReset ? (
-                            <span className="reset-tag">月重置{fmtReset(s.usage.monthlyReset)}</span>
+                          {s.usage.monthly && s.usage.monthly_reset ? (
+                            <span className="reset-tag">月重置{fmtReset(s.usage.monthly_reset)}</span>
                           ) : null}
                         </div>
                         <div className="card-sub">
