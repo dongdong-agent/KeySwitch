@@ -15,6 +15,18 @@ export function StatusDot({ u }: { u: UsageInfo | null }) {
   return <span className="dot" style={{ background: color }} />;
 }
 
+// 把 ISO 重置时间转成“剩X天Y小时”的中文描述
+function fmtReset(iso: string | null): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const diff = t - Date.now();
+  if (diff <= 0) return "已重置";
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  return d > 0 ? `剩${d}天${h}时` : `剩${h}时`;
+}
+
 function Modal({
   title,
   onClose,
@@ -204,7 +216,15 @@ export function OverviewPage() {
                     </div>
                     {s?.usage ? (
                       <>
-                        <div className="card-big">{s.usage.detail}</div>
+                        <div className="card-big">
+                          {s.usage.detail}
+                          {s.usage.weekly && s.usage.weeklyReset ? (
+                            <span className="reset-tag">周重置{fmtReset(s.usage.weeklyReset)}</span>
+                          ) : null}
+                          {s.usage.monthly && s.usage.monthlyReset ? (
+                            <span className="reset-tag">月重置{fmtReset(s.usage.monthlyReset)}</span>
+                          ) : null}
+                        </div>
                         <div className="card-sub">
                           <StatusDot u={s.usage} /> 状态: {s.usage.status} · {inUse}{note}
                         </div>

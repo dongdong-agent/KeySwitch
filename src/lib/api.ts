@@ -45,6 +45,9 @@ export interface UsageInfo {
   balance: number | null;
   status: string;
   detail: string;
+  rollingReset: string | null;
+  weeklyReset: string | null;
+  monthlyReset: string | null;
 }
 export interface KeyStatus {
   provider: string;

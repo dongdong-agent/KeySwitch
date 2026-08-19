@@ -15,6 +15,10 @@ pub struct UsageInfo {
     pub balance: Option<f64>,
     pub status: String, // ok | error | disabled
     pub detail: String,
+    // 各维度重置时间（ISO8601，opencode-go resetsAt）
+    pub rolling_reset: Option<String>,
+    pub weekly_reset: Option<String>,
+    pub monthly_reset: Option<String>,
 }
 
 /// 用量缓存 TTL：用量（滚动/周/月）短期几乎不变，避免每次刷新/切页都重新 HTTP。
@@ -71,7 +75,7 @@ pub fn get_usage_batch(cfg: &Config, force: bool) -> Vec<(String, String, String
                 jobs.push((pname.clone(), k.id.clone(), pcfg.clone(), k.key.clone()));
             } else {
                 out.push((pname.clone(), k.id.clone(), k.note.clone(), UsageInfo {
-                    kind: pcfg.usage_type.clone(), percent: None, weekly: None, monthly: None, balance: None,
+                    kind: pcfg.usage_type.clone(), percent: None, weekly: None, monthly: None, balance: None, rolling_reset: None, weekly_reset: None, monthly_reset: None,
                     status: "disabled".into(), detail: "未配置 key".into(),
                 }));
             }
@@ -178,17 +182,17 @@ fn query_balance(pcfg: &Provider, key: &str) -> UsageInfo {
                 UsageInfo {
                     kind: "balance".into(),
                     percent: None, weekly: None, monthly: None,
-                    balance: Some(total),
+                    balance: Some(total), rolling_reset: None, weekly_reset: None, monthly_reset: None,
                     status: if avail { "ok".into() } else { "disabled".into() },
                     detail: format!("余额 ¥{total:.2}"),
                 }
             }
-            Err(_) => UsageInfo { kind: "balance".into(), percent: None, weekly: None, monthly: None, balance: None, status: "error".into(), detail: "解析失败".into() },
+            Err(_) => UsageInfo { kind: "balance".into(), percent: None, weekly: None, monthly: None, balance: None, rolling_reset: None, weekly_reset: None, monthly_reset: None, status: "error".into(), detail: "解析失败".into() },
         },
         Err(e) => UsageInfo {
             kind: "balance".into(),
             percent: None, weekly: None, monthly: None,
-            balance: None,
+            balance: None, rolling_reset: None, weekly_reset: None, monthly_reset: None,
             status: "error".into(),
             detail: format!("查询失败: {e}"),
         },
@@ -207,6 +211,20 @@ fn query_percent(pcfg: &Provider, key: &str) -> UsageInfo {
                 let st = rolling.get("status").and_then(|v| v.as_str()).unwrap_or("ok").to_string();
                 let weekly = usage.get("weekly").and_then(|v| v.get("percent")).and_then(|v| v.as_u64());
                 let monthly = usage.get("monthly").and_then(|v| v.get("percent")).and_then(|v| v.as_u64());
+                let rolling_reset = rolling
+                    .get("resetsAt")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let weekly_reset = usage
+                    .get("weekly")
+                    .and_then(|v| v.get("resetsAt"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let monthly_reset = usage
+                    .get("monthly")
+                    .and_then(|v| v.get("resetsAt"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 let detail = format!(
                     "滚动{}% / 周{}% / 月{}%",
                     pct.map(|p| p.to_string()).unwrap_or_else(|| "?".into()),
@@ -221,14 +239,17 @@ fn query_percent(pcfg: &Provider, key: &str) -> UsageInfo {
                     balance: None,
                     status: st,
                     detail,
+                    rolling_reset,
+                    weekly_reset,
+                    monthly_reset,
                 }
             }
-            Err(_) => UsageInfo { kind: "percent".into(), percent: None, weekly: None, monthly: None, balance: None, status: "error".into(), detail: "解析失败".into() },
+            Err(_) => UsageInfo { kind: "percent".into(), percent: None, weekly: None, monthly: None, balance: None, rolling_reset: None, weekly_reset: None, monthly_reset: None, status: "error".into(), detail: "解析失败".into() },
         },
         Err(e) => UsageInfo {
             kind: "percent".into(),
             percent: None, weekly: None, monthly: None,
-            balance: None,
+            balance: None, rolling_reset: None, weekly_reset: None, monthly_reset: None,
             status: "error".into(),
             detail: format!("查询失败: {e}"),
         },
@@ -285,7 +306,7 @@ mod tests {
             percent: p,
             weekly: w,
             monthly: m,
-            balance: None,
+            balance: None, rolling_reset: None, weekly_reset: None, monthly_reset: None,
             status: "ok".into(),
             detail: "x".into(),
         }
@@ -323,7 +344,7 @@ mod tests {
             percent: None,
             weekly: None,
             monthly: None,
-            balance: Some(v),
+            balance: Some(v), rolling_reset: None, weekly_reset: None, monthly_reset: None,
             status: "ok".into(),
             detail: "".into(),
         };
