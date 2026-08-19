@@ -20,6 +20,8 @@ pub struct SmartResult {
     pub switches: Vec<SwitchEvent>,
     pub exhausted: Vec<String>,
     pub checked: usize,
+    /// 用量查询失败（403/网络错误）的 key，已按最近一次成功数据判定或无法判定
+    pub query_failed: Vec<String>,
 }
 
 pub fn smart_switch_once(
@@ -31,9 +33,14 @@ pub fn smart_switch_once(
     // 1) 一次查清所有 key 的用量（带缓存），并构建「可用 key」清单（列表顺序=优先级）
     let mut usage_all: std::collections::HashMap<(String, String), usage::UsageInfo> =
         std::collections::HashMap::new();
+    let mut query_failed: Vec<String> = Vec::new();
     for (pname, pcfg) in &cfg.providers {
         for k in &pcfg.keys {
             let u = usage::query_usage_cached(pname, &k.id, pcfg, &k.key);
+            if u.status == "error" {
+                // 无最近成功数据可回退：本次确实查不到
+                query_failed.push(format!("{pname}/{}", k.id));
+            }
             usage_all.insert((pname.clone(), k.id.clone()), u);
         }
     }
@@ -176,6 +183,7 @@ pub fn smart_switch_once(
         switches,
         exhausted,
         checked,
+        query_failed,
     }
 }
 

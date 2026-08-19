@@ -145,11 +145,14 @@ export function OverviewPage() {
             r.switches
               .map((s) => `  ${s.provider}/${s.from} → ${s.toProvider}/${s.to}（软件: ${s.targets.join("、") || "无"}）`)
               .join("\n") +
+            (r.queryFailed.length ? `\n\n⚠️ 查询失败（已按最近数据判定）: ${r.queryFailed.join("、")}` : ``) +
             `\n\n⚠️ 相关软件需重启后使用新 key 生效` +
             (usageLines ? `\n\n当前用量：\n${usageLines}` : ``),
         );
       } else if (r.exhausted.length) {
         alert(`⚠️ 告急但无可用 key: ${r.exhausted.join("、")}\n\n当前用量：\n${usageLines}`);
+      } else if (r.queryFailed.length) {
+        alert(`⚠️ 用量查询失败（403/网络），本次无法判定：${r.queryFailed.join("、")}\n\n当前用量：\n${usageLines}`);
       } else {
         alert(`✅ 检测完成：${r.checked} 个在用 key 全部正常（未达阈值 ${cfg?.auto_switch?.trigger_percent ?? 100}%，无需切换）\n\n当前用量：\n${usageLines}`);
       }
@@ -168,6 +171,19 @@ export function OverviewPage() {
     return m;
   }, [status]);
 
+  // 真实「在用」：按当前 mapping 计算每个 key 被哪些软件使用（不是备注文字）
+  const keyUsers = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    if (cfg) {
+      for (const t of cfg.targets) {
+        for (const [p, kid] of Object.entries(t.mapping)) {
+          if (kid) (m[`${p}::${kid}`] ||= []).push(t.label || t.name);
+        }
+      }
+    }
+    return m;
+  }, [cfg]);
+
   return (
     <div className="page">
       <h2 className="page-title">总览</h2>
@@ -178,6 +194,9 @@ export function OverviewPage() {
           ? Object.entries(cfg.providers).flatMap(([p, pc]) =>
               pc.keys.map((k) => {
                 const s = statusMap[`${p}::${k.id}`];
+                const users = keyUsers[`${p}::${k.id}`] || [];
+                const inUse = users.length ? `在用: ${users.join("、")}` : "未使用";
+                const note = k.note ? ` · 备注: ${k.note}` : "";
                 return (
                   <div className="card" key={`${p}::${k.id}`}>
                     <div className="card-title">
@@ -187,11 +206,11 @@ export function OverviewPage() {
                       <>
                         <div className="card-big">{s.usage.detail}</div>
                         <div className="card-sub">
-                          <StatusDot u={s.usage} /> 状态: {s.usage.status} · {k.note}
+                          <StatusDot u={s.usage} /> 状态: {s.usage.status} · {inUse}{note}
                         </div>
                       </>
                     ) : (
-                      <div className="card-sub">用量加载中… · {k.note}</div>
+                      <div className="card-sub">用量加载中… · {inUse}{note}</div>
                     )}
                   </div>
                 );

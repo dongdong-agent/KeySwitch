@@ -40,6 +40,14 @@ fn cache_get(k: &CacheKey) -> Option<UsageInfo> {
 
 fn cache_set(k: CacheKey, v: UsageInfo) {
     if let Ok(mut c) = USAGE_CACHE.lock() {
+        // 查询失败(403/网络错误)时保留最近一次成功数据，避免污染缓存
+        if v.status == "error" {
+            if let Some((_, old)) = c.get(&k) {
+                if old.status != "error" {
+                    return;
+                }
+            }
+        }
         c.insert(k, (Instant::now(), v));
     }
 }
@@ -103,6 +111,7 @@ pub fn get_usage_batch(cfg: &Config, force: bool) -> Vec<(String, String, String
 }
 
 /// 清空用量缓存（强制全部重新查询用；保留接口备用）
+#[allow(dead_code)] // 备用：清空用量缓存
 pub fn clear_usage_cache() {
     if let Ok(mut c) = USAGE_CACHE.lock() {
         c.clear();
@@ -131,6 +140,7 @@ pub fn query_usage(pcfg: &Provider, key: &str) -> UsageInfo {
 }
 
 /// 带缓存的用量查询：命中（未过期）直接返回缓存，否则真实查询并回填。
+/// 查询失败时回退到最近一次成功数据（若有），避免 403 导致无法判定。
 /// 供智能切换等多次查询场景复用，避免重复 HTTP（用量短期几乎不变）。
 pub fn query_usage_cached(provider: &str, id: &str, pcfg: &Provider, key: &str) -> UsageInfo {
     let ck = (provider.to_string(), id.to_string());
@@ -138,6 +148,16 @@ pub fn query_usage_cached(provider: &str, id: &str, pcfg: &Provider, key: &str) 
         return u;
     }
     let u = query_usage(pcfg, key);
+    if u.status == "error" {
+        // 本次查询失败：回退最近一次成功数据，保证判定有据可依
+        if let Ok(c) = USAGE_CACHE.lock() {
+            if let Some((_, old)) = c.get(&ck) {
+                if old.status != "error" {
+                    return old.clone();
+                }
+            }
+        }
+    }
     cache_set(ck, u.clone());
     u
 }
@@ -251,5 +271,74 @@ pub fn is_exhausted(
     match max_pct {
         Some(p) => p >= limit,
         None => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Config;
+
+    fn pu(p: Option<u64>, w: Option<u64>, m: Option<u64>) -> UsageInfo {
+        UsageInfo {
+            kind: "percent".into(),
+            percent: p,
+            weekly: w,
+            monthly: m,
+            balance: None,
+            status: "ok".into(),
+            detail: "x".into(),
+        }
+    }
+
+    #[test]
+    fn any_dimension_reaching_threshold_triggers() {
+        let cfg = Config::default(); // 默认 percent 阈值 90
+        // 仅「周」达到 100 → 判定耗尽（用户要求三维度任一）
+        assert!(is_exhausted(&cfg, "p", &pu(None, Some(100), None), None));
+        // 仅「月」达到 95 → 判定耗尽
+        assert!(is_exhausted(&cfg, "p", &pu(None, None, Some(95)), None));
+        // 滚动 95 → 判定耗尽
+        assert!(is_exhausted(&cfg, "p", &pu(Some(95), Some(10), Some(10)), None));
+        // 三维都低 → 不耗尽
+        assert!(!is_exhausted(&cfg, "p", &pu(Some(20), Some(30), Some(50)), None));
+        // 有维度为 None 时取其余最大值
+        assert!(!is_exhausted(&cfg, "p", &pu(None, Some(40), None), None));
+    }
+
+    #[test]
+    fn trigger_percent_overrides_default_threshold() {
+        let cfg = Config::default();
+        // 默认阈值 90，故 80 不触发
+        assert!(!is_exhausted(&cfg, "p", &pu(Some(80), None, None), None));
+        // 手动覆盖阈值 70 → 80 触发
+        assert!(is_exhausted(&cfg, "p", &pu(Some(80), None, None), Some(70)));
+    }
+
+    #[test]
+    fn balance_below_min_is_exhausted() {
+        let cfg = Config::default();
+        let b = |v: f64| UsageInfo {
+            kind: "balance".into(),
+            percent: None,
+            weekly: None,
+            monthly: None,
+            balance: Some(v),
+            status: "ok".into(),
+            detail: "".into(),
+        };
+        assert!(is_exhausted(&cfg, "p", &b(1.0), None)); // 1 < 5
+        assert!(!is_exhausted(&cfg, "p", &b(100.0), None));
+    }
+
+    #[test]
+    fn error_and_disabled_always_exhausted() {
+        let cfg = Config::default();
+        let mut e = pu(Some(10), None, None);
+        e.status = "error".into();
+        assert!(is_exhausted(&cfg, "p", &e, None));
+        let mut d = pu(Some(10), None, None);
+        d.status = "disabled".into();
+        assert!(is_exhausted(&cfg, "p", &d, None));
     }
 }

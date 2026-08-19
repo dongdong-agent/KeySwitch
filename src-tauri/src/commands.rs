@@ -195,8 +195,7 @@ pub async fn apply_targets(new_mappings: HashMap<String, HashMap<String, String>
 #[tauri::command]
 pub async fn smart_check(trigger: Option<u64>) -> Result<smart::SmartResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        // 手动触发：清空用量缓存，强制实时查询（自动定时走缓存即可）
-        usage::clear_usage_cache();
+        // 不清理用量缓存：查询失败时可回退最近一次成功数据判定（403 时有据可依）
         let mut cfg = crate::models::load_config()?;
         let r = smart::smart_switch_once(&mut cfg, trigger);
         if !r.switches.is_empty() {

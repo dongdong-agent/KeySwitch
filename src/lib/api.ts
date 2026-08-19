@@ -75,6 +75,7 @@ export interface SmartResult {
   switches: SwitchEvent[];
   exhausted: string[];
   checked: number;
+  queryFailed: string[];
 }
 export interface AdapterInfo {
   name: string;
