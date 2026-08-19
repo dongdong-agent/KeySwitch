@@ -88,24 +88,27 @@ export function OverviewPage() {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
+  const loadStatus = async (force = false) => {
     try {
-      const [st, ac, c] = await Promise.all([api.getStatus(), api.getActualKeys(), api.getConfig()]);
-      setStatus(st);
+      setStatus(await api.getStatus(force));
+    } catch (e) {
+      msgErr(e);
+    }
+  };
+  const load = async () => {
+    // 本地数据（配置 + 各软件实际状态）先渲染，页面不用等用量
+    try {
+      const [ac, c] = await Promise.all([api.getActualKeys(), api.getConfig()]);
       setActual(ac);
       setCfg(c);
     } catch (e) {
       msgErr(e);
     }
+    // 用量信息后台异步填充，不阻塞页面渲染（命中 5 分钟缓存时立即返回）
+    loadStatus(false);
   };
   // 手动刷新用量：强制绕过缓存重新查询
-  const refreshStatus = async () => {
-    try {
-      setStatus(await api.getStatus(true));
-    } catch (e) {
-      msgErr(e);
-    }
-  };
+  const refreshStatus = () => loadStatus(true);
   useEffect(() => {
     load();
   }, []);

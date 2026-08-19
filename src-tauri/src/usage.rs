@@ -18,7 +18,8 @@ pub struct UsageInfo {
 }
 
 /// 用量缓存 TTL：用量（滚动/周/月）短期几乎不变，避免每次刷新/切页都重新 HTTP。
-const CACHE_TTL: Duration = Duration::from_secs(60);
+/// 5 分钟：进页/自动刷新多数直接命中缓存，只在主动点「刷新」或缓存过期时才打远程。
+const CACHE_TTL: Duration = Duration::from_secs(300);
 
 type CacheKey = (String, String); // (provider, key_id)
 
