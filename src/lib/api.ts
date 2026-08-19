@@ -1,4 +1,6 @@
 // KeySwitch 前端 API 封装（tauri invoke → Rust 命令）
+// ⚠️ Tauri 2 的 #[tauri::command] 默认把参数名按 camelCase 与前端匹配
+//（Rust 参数 snake_case key_id ↔ 前端 keyId，由宏自动转换）——前端必须传 camelCase。
 
 import { invoke } from "@tauri-apps/api/core";
 
@@ -90,20 +92,31 @@ export const api = {
   smartCheck: (trigger?: number) =>
     invoke<SmartResult>("smart_check", { trigger }),
   saveAutoSettings: (enabled: boolean, triggerPercent: number, intervalMin: number) =>
-    invoke<void>("save_auto_settings", { enabled, trigger_percent: triggerPercent, interval_min: intervalMin }),
+    invoke<void>("save_auto_settings", { enabled, triggerPercent, intervalMin }),
   addProvider: (name: string, baseUrl: string, usageType: string) =>
-    invoke<string>("add_provider", { name, base_url: baseUrl, usage_type: usageType }),
+    invoke<string>("add_provider", { name, baseUrl, usageType }),
   deleteProvider: (name: string) => invoke<string>("delete_provider", { name }),
   addKey: (provider: string, keyId: string, keyValue: string, note: string) =>
-    invoke<string>("add_key", { provider, key_id: keyId, key_value: keyValue, note }),
+    invoke<string>("add_key", { provider, keyId, keyValue, note }),
   deleteKey: (provider: string, keyId: string) =>
-    invoke<string>("delete_key", { provider, key_id: keyId }),
+    invoke<string>("delete_key", { provider, keyId }),
   editKey: (provider: string, oldId: string, newProvider: string, newId: string, newValue: string, newNote: string) =>
-    invoke<string>("edit_key", { provider, old_id: oldId, new_provider: newProvider, new_id: newId, new_value: newValue, new_note: newNote }),
+    invoke<string>("edit_key", { provider, oldId, newProvider, newId, newValue, newNote }),
   moveKey: (provider: string, keyId: string, direction: string) =>
-    invoke<string>("move_key", { provider, key_id: keyId, direction }),
+    invoke<string>("move_key", { provider, keyId, direction }),
   addTarget: (t: Omit<Target, "mapping"> & { mapping: Record<string, string> }) =>
-    invoke<string>("add_target", { ...t }),
+    invoke<string>("add_target", {
+      name: t.name,
+      label: t.label,
+      adapter: t.adapter,
+      env: t.env,
+      path: t.path,
+      keyPath: t.key_path,
+      keyName: t.key_name,
+      pattern: t.pattern,
+      replacement: t.replacement,
+      mapping: t.mapping,
+    }),
   deleteTarget: (name: string) => invoke<string>("delete_target", { name }),
   openPath: (kind: string) => invoke<void>("open_path", { kind }),
 };
