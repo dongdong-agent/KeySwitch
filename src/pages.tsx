@@ -15,16 +15,46 @@ export function StatusDot({ u }: { u: UsageInfo | null }) {
   return <span className="dot" style={{ background: color }} />;
 }
 
-// 把 ISO 重置时间转成“剩X天Y小时”的中文描述
+// 把 ISO 重置时间转成“X 天 X 小时 / X 小时 X 分钟”的中文描述
 function fmtReset(iso: string | null): string {
   if (!iso) return "";
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return "";
   const diff = t - Date.now();
   if (diff <= 0) return "已重置";
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  return d > 0 ? `剩${d}天${h}时` : `剩${h}时`;
+  const days = Math.floor(diff / 86400000);
+  const hours = Math.floor((diff % 86400000) / 3600000);
+  const mins = Math.floor((diff % 3600000) / 60000);
+  if (days > 0) return `${days} 天 ${hours} 小时`;
+  if (hours > 0) return `${hours} 小时 ${mins} 分钟`;
+  return `${mins} 分钟`;
+}
+
+// 用量可视化：滚动 / 每周 / 每月 三根进度条 + 重置倒计时（参考 opencode 用量条样式）
+function UsageBars({ u }: { u: UsageInfo | null }) {
+  if (!u) return <div className="card-sub">用量加载中…</div>;
+  if (u.kind === "balance") return <div className="card-big">{u.detail}</div>;
+  const rows = [
+    { label: "滚动用量", pct: u.percent, reset: u.rolling_reset },
+    { label: "每周用量", pct: u.weekly, reset: u.weekly_reset },
+    { label: "每月用量", pct: u.monthly, reset: u.monthly_reset },
+  ];
+  return (
+    <div className="usage-bars">
+      {rows.map((r) => (
+        <div className="usage-bar" key={r.label}>
+          <div className="usage-bar-top">
+            <span className="usage-bar-label">{r.label}</span>
+            <span className="usage-bar-pct">{r.pct != null ? `${r.pct}%` : "?"}</span>
+          </div>
+          <div className="usage-bar-track">
+            <div className="usage-bar-fill" style={{ width: `${Math.min(100, r.pct ?? 0)}%` }} />
+          </div>
+          <div className="usage-bar-reset">{r.reset ? `重置于 ${fmtReset(r.reset)}` : ""}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function Modal({
@@ -216,15 +246,7 @@ export function OverviewPage() {
                     </div>
                     {s?.usage ? (
                       <>
-                        <div className="card-big">
-                          {s.usage.detail}
-                          {s.usage.weekly && s.usage.weekly_reset ? (
-                            <span className="reset-tag">周重置{fmtReset(s.usage.weekly_reset)}</span>
-                          ) : null}
-                          {s.usage.monthly && s.usage.monthly_reset ? (
-                            <span className="reset-tag">月重置{fmtReset(s.usage.monthly_reset)}</span>
-                          ) : null}
-                        </div>
+                        <UsageBars u={s.usage} />
                         <div className="card-sub">
                           <StatusDot u={s.usage} /> 状态: {s.usage.status} · {inUse}{note}
                         </div>
