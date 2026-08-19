@@ -143,7 +143,7 @@ export function OverviewPage() {
         alert(
           `🔄 智能切换完成：\n` +
             r.switches
-              .map((s) => `  ${s.provider}: ${s.from} → ${s.to}（软件: ${s.targets.join("、") || "无"}）`)
+              .map((s) => `  ${s.provider}/${s.from} → ${s.toProvider}/${s.to}（软件: ${s.targets.join("、") || "无"}）`)
               .join("\n") +
             `\n\n⚠️ 相关软件需重启后使用新 key 生效` +
             (usageLines ? `\n\n当前用量：\n${usageLines}` : ``),

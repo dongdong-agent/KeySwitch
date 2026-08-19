@@ -195,6 +195,8 @@ pub async fn apply_targets(new_mappings: HashMap<String, HashMap<String, String>
 #[tauri::command]
 pub async fn smart_check(trigger: Option<u64>) -> Result<smart::SmartResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // 手动触发：清空用量缓存，强制实时查询（自动定时走缓存即可）
+        usage::clear_usage_cache();
         let mut cfg = crate::models::load_config()?;
         let r = smart::smart_switch_once(&mut cfg, trigger);
         if !r.switches.is_empty() {
@@ -263,25 +265,25 @@ pub fn add_key(provider: String, key_id: String, key_value: String, note: String
     Ok(format!("已添加 {provider}/{key_id}"))
 }
 
-#[tauri::command]
-pub fn edit_key(
-    provider: String,
-    old_id: String,
-    new_provider: String,
-    new_id: String,
+/// 编辑一个 Key（改 provider / 标识 / 值 / 备注），并同步迁移引用它的应用映射。
+/// 纯逻辑（不读写磁盘），便于单测；由 edit_key command 负责 load/save。
+fn edit_key_inner(
+    cfg: &mut Config,
+    provider: &str,
+    old_id: &str,
+    new_provider: &str,
+    new_id: &str,
     new_value: String,
     new_note: String,
 ) -> Result<String, String> {
-    let mut cfg = crate::models::load_config()?;
-
     // 目标 provider 必须存在
-    if !cfg.providers.contains_key(&new_provider) {
+    if !cfg.providers.contains_key(new_provider) {
         return Err(format!("Provider 不存在: {new_provider}"));
     }
     // 确认旧 key 存在，并记录其在列表中的位置（顺序即优先级）
     let old_index = cfg
         .providers
-        .get(&provider)
+        .get(provider)
         .and_then(|p| p.keys.iter().position(|k| k.id == old_id));
     let old_index = match old_index {
         Some(i) => i,
@@ -290,7 +292,7 @@ pub fn edit_key(
     // 校验新标识在目标 provider 内不冲突（同 provider 时排除自身）
     let clash = cfg
         .providers
-        .get(&new_provider)
+        .get(new_provider)
         .map(|p| {
             p.keys
                 .iter()
@@ -302,16 +304,16 @@ pub fn edit_key(
     }
 
     // 移除旧项
-    if let Some(p) = cfg.providers.get_mut(&provider) {
+    if let Some(p) = cfg.providers.get_mut(provider) {
         p.keys.retain(|k| k.id != old_id);
     }
     // 插入新项：同 provider 内放回原位置（保持优先级），跨 provider 追加到新 provider 末尾
     let item = KeyItem {
-        id: new_id.clone(),
+        id: new_id.to_string(),
         key: new_value,
         note: new_note,
     };
-    if let Some(tp) = cfg.providers.get_mut(&new_provider) {
+    if let Some(tp) = cfg.providers.get_mut(new_provider) {
         if provider == new_provider {
             let insert_at = old_index.min(tp.keys.len());
             tp.keys.insert(insert_at, item);
@@ -322,18 +324,40 @@ pub fn edit_key(
 
     // 更新所有 target 的 mapping：原 (旧provider -> 旧id) 迁移为 (新provider -> 新id)
     for t in cfg.targets.iter_mut() {
-        if t.mapping.get(&provider) == Some(&old_id) {
+        if t.mapping.get(provider).map(|s| s.as_str()) == Some(old_id) {
             if provider == new_provider {
-                t.mapping.insert(provider.clone(), new_id.clone());
+                t.mapping.insert(provider.to_string(), new_id.to_string());
             } else {
-                t.mapping.remove(&provider);
-                t.mapping.insert(new_provider.clone(), new_id.clone());
+                t.mapping.remove(provider);
+                t.mapping.insert(new_provider.to_string(), new_id.to_string());
             }
         }
     }
 
-    crate::models::save_config(&cfg)?;
     Ok(format!("已更新 {provider}/{old_id} → {new_provider}/{new_id}"))
+}
+
+#[tauri::command]
+pub fn edit_key(
+    provider: String,
+    old_id: String,
+    new_provider: String,
+    new_id: String,
+    new_value: String,
+    new_note: String,
+) -> Result<String, String> {
+    let mut cfg = crate::models::load_config()?;
+    let msg = edit_key_inner(
+        &mut cfg,
+        &provider,
+        &old_id,
+        &new_provider,
+        &new_id,
+        new_value,
+        new_note,
+    )?;
+    crate::models::save_config(&cfg)?;
+    Ok(msg)
 }
 
 #[tauri::command]
@@ -439,4 +463,82 @@ pub fn open_path(kind: String) -> Result<(), String> {
         let _ = std::process::Command::new("xdg-open").arg(&target).spawn();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 构造含两个 provider、一个引用 p1/k1 的 target 的配置
+    fn cfg_with_two_providers() -> Config {
+        let mut cfg = Config::default();
+        cfg.providers.insert(
+            "p1".into(),
+            Provider {
+                base_url: "u".into(),
+                usage_type: "percent".into(),
+                keys: vec![
+                    KeyItem { id: "k1".into(), key: "sk-a".into(), note: "".into() },
+                    KeyItem { id: "k2".into(), key: "sk-b".into(), note: "".into() },
+                ],
+            },
+        );
+        cfg.providers.insert(
+            "p2".into(),
+            Provider {
+                base_url: "u".into(),
+                usage_type: "percent".into(),
+                keys: vec![KeyItem { id: "k3".into(), key: "sk-c".into(), note: "".into() }],
+            },
+        );
+        let mut t = Target::default();
+        t.name = "app1".into();
+        t.adapter = "file_env".into();
+        t.mapping.insert("p1".into(), "k1".into());
+        cfg.targets.push(t);
+        cfg
+    }
+
+    #[test]
+    fn rename_in_same_provider_keeps_priority_and_updates_mapping() {
+        let mut cfg = cfg_with_two_providers();
+        let r = edit_key_inner(&mut cfg, "p1", "k1", "p1", "k1x", "sk-zz".into(), "note".into());
+        assert!(r.is_ok(), "{r:?}");
+        let keys = &cfg.providers["p1"].keys;
+        assert_eq!(keys.len(), 2);
+        // 仍在原位置（index 0，保持优先级），标识/值/备注已更新
+        assert_eq!(keys[0].id, "k1x");
+        assert_eq!(keys[0].key, "sk-zz");
+        assert_eq!(keys[0].note, "note");
+        // mapping 已同步到新标识
+        assert_eq!(cfg.targets[0].mapping.get("p1").map(|s| s.as_str()), Some("k1x"));
+        // 其它 key 不受影响
+        assert_eq!(cfg.providers["p1"].keys[1].id, "k2");
+    }
+
+    #[test]
+    fn move_to_another_provider_migrates_mapping() {
+        let mut cfg = cfg_with_two_providers();
+        let r = edit_key_inner(&mut cfg, "p1", "k1", "p2", "k9", "sk-z".into(), "".into());
+        assert!(r.is_ok(), "{r:?}");
+        // key 已从 p1 移除、加入 p2
+        assert!(cfg.providers["p1"].keys.iter().all(|k| k.id != "k1"));
+        assert!(cfg.providers["p2"].keys.iter().any(|k| k.id == "k9" && k.key == "sk-z"));
+        // mapping 从 p1 迁移到 p2:new id，并移除旧 p1 键
+        assert_eq!(cfg.targets[0].mapping.get("p2").map(|s| s.as_str()), Some("k9"));
+        assert!(!cfg.targets[0].mapping.contains_key("p1"));
+    }
+
+    #[test]
+    fn rejects_missing_provider_conflict_and_unknown_old() {
+        let mut cfg = cfg_with_two_providers();
+        // 目标 provider 不存在
+        assert!(edit_key_inner(&mut cfg, "p1", "k1", "NOPE", "kx", "v".into(), "".into()).is_err());
+        // id 冲突：p1 内把 k2 改名为已存在的 k1
+        let mut cfg2 = cfg_with_two_providers();
+        assert!(edit_key_inner(&mut cfg2, "p1", "k2", "p1", "k1", "v".into(), "".into()).is_err());
+        // 旧 key 不存在
+        let mut cfg3 = cfg_with_two_providers();
+        assert!(edit_key_inner(&mut cfg3, "p1", "ghost", "p2", "nx", "v".into(), "".into()).is_err());
+    }
 }

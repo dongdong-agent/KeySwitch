@@ -65,6 +65,7 @@ export interface ApplyResult {
 }
 export interface SwitchEvent {
   provider: string;
+  toProvider: string;
   from: string;
   to: string;
   targets: string[];

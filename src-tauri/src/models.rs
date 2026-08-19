@@ -71,6 +71,10 @@ pub struct AutoSwitch {
     pub interval_min: u64,
     #[serde(default = "default_trigger")]
     pub trigger_percent: u64,
+    /// 跨 provider 兜底切换的偏好顺序（如 ["opencode-go","deepseek"]）；
+    /// 空 = 仅同 provider 内切换。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prefer_providers: Vec<String>,
 }
 
 fn default_interval() -> u64 {
@@ -86,6 +90,7 @@ impl Default for AutoSwitch {
             enabled: false,
             interval_min: default_interval(),
             trigger_percent: default_trigger(),
+            prefer_providers: Vec::new(),
         }
     }
 }
@@ -130,6 +135,7 @@ impl Config {
             .unwrap_or_default()
     }
 
+    #[allow(dead_code)] // 预留
     pub fn key_ids(&self, provider: &str) -> Vec<String> {
         self.providers
             .get(provider)
@@ -141,11 +147,69 @@ impl Config {
         self.providers.keys().cloned().collect()
     }
 
+    #[allow(dead_code)] // 预留
     pub fn target_mapping(&self, target_name: &str) -> HashMap<String, String> {
         self.targets
             .iter()
             .find(|t| t.name == target_name)
             .map(|t| t.mapping.clone())
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toml_roundtrip_preserves_providers_and_auto_switch() {
+        let mut cfg = Config::default();
+        cfg.providers.insert(
+            "opencode-go".into(),
+            Provider {
+                base_url: "https://api.example.com".into(),
+                usage_type: "percent".into(),
+                keys: vec![KeyItem {
+                    id: "k1".into(),
+                    key: "sk-123".into(),
+                    note: "测试".into(),
+                }],
+            },
+        );
+        cfg.auto_switch.enabled = true;
+        cfg.auto_switch.trigger_percent = 100;
+        let s = toml::to_string_pretty(&cfg).unwrap();
+        let back: Config = toml::from_str(&s).unwrap();
+        assert_eq!(back.providers["opencode-go"].keys[0].id, "k1");
+        assert_eq!(back.providers["opencode-go"].keys[0].key, "sk-123");
+        assert!(back.auto_switch.enabled);
+        assert_eq!(back.auto_switch.trigger_percent, 100);
+    }
+
+    #[test]
+    fn defaults_fill_in_missing_fields() {
+        let s = "[auto_switch]\nenabled = true\n\n[[targets]]\nname = \"app\"\nadapter = \"file_env\"\nmapping = { opencode-go = \"k1\" }\n";
+        let cfg: Config = toml::from_str(s).unwrap();
+        assert!(cfg.auto_switch.enabled);
+        assert_eq!(cfg.auto_switch.interval_min, 5); // 默认 5 分钟
+        assert_eq!(cfg.auto_switch.trigger_percent, 100);
+        assert_eq!(cfg.targets.len(), 1);
+        assert_eq!(cfg.targets[0].mapping.get("opencode-go").map(|v| v.as_str()), Some("k1"));
+        assert_eq!(cfg.targets[0].env, None); // 未提供字段默认 None
+    }
+
+    #[test]
+    fn key_value_lookup() {
+        let mut cfg = Config::default();
+        cfg.providers.insert(
+            "p".into(),
+            Provider {
+                base_url: "u".into(),
+                usage_type: "percent".into(),
+                keys: vec![KeyItem { id: "a".into(), key: "sk-x".into(), note: "".into() }],
+            },
+        );
+        assert_eq!(cfg.key_value("p", "a"), "sk-x");
+        assert_eq!(cfg.key_value("p", "nope"), ""); // 未知返回空
     }
 }
