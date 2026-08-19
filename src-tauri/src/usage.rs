@@ -111,9 +111,10 @@ pub fn clear_usage_cache() {
 
 /// 全局共享 HTTP Agent：复用连接池（keep-alive），
 /// 避免每次用量刷新都重建 TCP/TLS 连接（多次连续查询 / 智能切换时收益明显）。
+/// 超时 8s：用量接口通常 <2s，慢/挂的远端快速降级，不拖累整体。
 static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
     ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(8))
         .build()
 });
 

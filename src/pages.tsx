@@ -161,29 +161,45 @@ export function OverviewPage() {
     }
   };
 
+  // 用量按 provider:id 索引，用于把后台返回的用量填充进已渲染的 Key 卡片
+  const statusMap = useMemo(() => {
+    const m: Record<string, KeyStatus> = {};
+    for (const s of status) m[`${s.provider}::${s.id}`] = s;
+    return m;
+  }, [status]);
+
   return (
     <div className="page">
       <h2 className="page-title">总览</h2>
       <p className="page-sub">各 API Key 的用量 / 余额实时状态</p>
 
       <div className="cards">
-        {status.map((s) => (
-          <div className="card" key={s.id}>
-            <div className="card-title">
-              {s.provider} / {s.id}
-            </div>
-            {s.usage ? (
-              <>
-                <div className="card-big">{s.usage.detail}</div>
-                <div className="card-sub">
-                  <StatusDot u={s.usage} /> 状态: {s.usage.status} · {s.note}
-                </div>
-              </>
-            ) : (
-              <div className="card-sub">未配置</div>
-            )}
-          </div>
-        ))}
+        {cfg
+          ? Object.entries(cfg.providers).flatMap(([p, pc]) =>
+              pc.keys.map((k) => {
+                const s = statusMap[`${p}::${k.id}`];
+                return (
+                  <div className="card" key={`${p}::${k.id}`}>
+                    <div className="card-title">
+                      {p} / {k.id}
+                    </div>
+                    {s?.usage ? (
+                      <>
+                        <div className="card-big">{s.usage.detail}</div>
+                        <div className="card-sub">
+                          <StatusDot u={s.usage} /> 状态: {s.usage.status} · {k.note}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="card-sub">用量加载中… · {k.note}</div>
+                    )}
+                  </div>
+                );
+              }),
+            )
+          : (
+            <div className="card-sub">加载中…</div>
+          )}
       </div>
 
       <div className="row">
