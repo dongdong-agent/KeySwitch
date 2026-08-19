@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import "./App.css";
 import {
   OverviewPage,
@@ -18,8 +18,25 @@ const PAGES = [
   { id: "settings", icon: "⚙️", label: "设置" },
 ];
 
+const PAGES_ELEM: Record<string, ReactNode> = {
+  overview: <OverviewPage />,
+  matrix: <MatrixPage />,
+  providers: <ProvidersPage />,
+  keys: <KeysPage />,
+  apps: <AppsPage />,
+  settings: <SettingsPage />,
+};
+
 function App() {
   const [page, setPage] = useState("overview");
+  // 记录已访问过的页面：首次进入才挂载，之后常驻 DOM（display 显隐切换），
+  // 切走不卸载、切回不重新拉数据 —— 根治切页卡顿/空白/重复请求
+  const [visited, setVisited] = useState<Record<string, boolean>>({ overview: true });
+
+  const open = (id: string) => {
+    setPage(id);
+    setVisited((v) => (v[id] ? v : { ...v, [id]: true }));
+  };
 
   return (
     <div className="app">
@@ -35,7 +52,7 @@ function App() {
           <button
             key={p.id}
             className={`nav-btn${page === p.id ? " active" : ""}`}
-            onClick={() => setPage(p.id)}
+            onClick={() => open(p.id)}
           >
             <span className="nav-icon">{p.icon}</span>
             {p.label}
@@ -44,12 +61,15 @@ function App() {
         <div className="nav-footer">Rust / Tauri 2</div>
       </nav>
       <main className="content">
-        {page === "overview" && <OverviewPage />}
-        {page === "matrix" && <MatrixPage />}
-        {page === "providers" && <ProvidersPage />}
-        {page === "keys" && <KeysPage />}
-        {page === "apps" && <AppsPage />}
-        {page === "settings" && <SettingsPage />}
+        {Object.entries(PAGES_ELEM).map(([id, el]) => (
+          <div
+            key={id}
+            className="page-slot"
+            style={{ display: page === id ? "block" : "none" }}
+          >
+            {visited[id] ? el : null}
+          </div>
+        ))}
       </main>
     </div>
   );

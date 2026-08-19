@@ -31,8 +31,11 @@ pub struct AdapterInfo {
 // ---------- 配置 ----------
 
 #[tauri::command]
-pub fn get_config() -> Result<Config, String> {
-    crate::models::load_config()
+pub async fn get_config() -> Result<Config, String> {
+    // 文件读 + TOML 解析放后台线程，不占主界面线程（切页时反复调用）
+    tauri::async_runtime::spawn_blocking(|| crate::models::load_config())
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -69,22 +72,27 @@ pub async fn get_status(force: Option<bool>) -> Result<Vec<KeyStatus>, String> {
 }
 
 #[tauri::command]
-pub fn get_actual_keys() -> Result<HashMap<String, HashMap<String, String>>, String> {
-    let cfg = crate::models::load_config()?;
-    let mut out = HashMap::new();
-    for t in &cfg.targets {
-        if let Ok(a) = adapters::build_adapter(t) {
-            let mut m = HashMap::new();
-            for p in cfg.provider_names() {
-                let v = a.read_key(&p);
-                if !v.is_empty() {
-                    m.insert(p, v);
+pub async fn get_actual_keys() -> Result<HashMap<String, HashMap<String, String>>, String> {
+    // 涉及到读文件 / powershell 等较重 IO，放后台线程避免阻塞主界面
+    tauri::async_runtime::spawn_blocking(move || {
+        let cfg = crate::models::load_config()?;
+        let mut out = HashMap::new();
+        for t in &cfg.targets {
+            if let Ok(a) = adapters::build_adapter(t) {
+                let mut m = HashMap::new();
+                for p in cfg.provider_names() {
+                    let v = a.read_key(&p);
+                    if !v.is_empty() {
+                        m.insert(p, v);
+                    }
                 }
+                out.insert(t.name.clone(), m);
             }
-            out.insert(t.name.clone(), m);
         }
-    }
-    Ok(out)
+        Ok(out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -104,8 +112,10 @@ pub fn list_adapters() -> Vec<AdapterInfo> {
 // ---------- 保存并应用 ----------
 
 #[tauri::command]
-pub fn apply_targets(new_mappings: HashMap<String, HashMap<String, String>>) -> Result<ApplyResult, String> {
-    let mut cfg = crate::models::load_config()?;
+pub async fn apply_targets(new_mappings: HashMap<String, HashMap<String, String>>) -> Result<ApplyResult, String> {
+    // 写多个真实配置文件（文件 IO）较重，放后台线程
+    tauri::async_runtime::spawn_blocking(move || -> Result<ApplyResult, String> {
+        let mut cfg = crate::models::load_config()?;
     let mut results = Vec::new();
     let mut restart_set: Vec<String> = Vec::new();
 
@@ -174,7 +184,10 @@ pub fn apply_targets(new_mappings: HashMap<String, HashMap<String, String>>) -> 
     }
 
     crate::models::save_config(&cfg)?;
-    Ok(ApplyResult { results, restart: restart_set })
+        Ok(ApplyResult { results, restart: restart_set })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ---------- 智能切换 ----------
