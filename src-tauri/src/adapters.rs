@@ -29,6 +29,20 @@ fn home() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// 让子进程在后台静默运行、不弹出终端窗口。
+/// release 版是 windows_subsystem = "windows"（无控制台），此时 spawn 控制台类程序
+/// （如 powershell.exe）会被 Windows 强制新建一个黑色控制台窗口闪出——这里用
+/// CREATE_NO_WINDOW 标志消除它，保存/读取配置都在后台完成。
+#[cfg(target_os = "windows")]
+fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+}
+#[cfg(not(target_os = "windows"))]
+fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    cmd
+}
+
 fn backup(path: &std::path::Path) {
     if path.exists() {
         let ts = chrono_lite();
@@ -152,7 +166,8 @@ fn invalidate_env(name: &str) {
 /// 真正读取用户级环境变量（spawn 一次 powershell）
 fn read_env_powershell(name: &str) -> String {
     let ps = format!("[Environment]::GetEnvironmentVariable('{}','User')", name);
-    if let Ok(o) = std::process::Command::new("powershell.exe")
+    let mut cmd = std::process::Command::new("powershell.exe");
+    if let Ok(o) = no_window(&mut cmd)
         .args(["-NoProfile", "-Command", &ps])
         .output()
     {
@@ -173,7 +188,8 @@ impl Adapter for EnvVarAdapter {
             "[Environment]::SetEnvironmentVariable('{}','{}','User')",
             self.env_name, key
         );
-        let out = std::process::Command::new("powershell.exe")
+        let mut cmd = std::process::Command::new("powershell.exe");
+        let out = no_window(&mut cmd)
             .args(["-NoProfile", "-Command", &ps])
             .output();
         match out {
