@@ -299,17 +299,21 @@ export function MatrixPage() {
     load();
   }, []);
 
-  if (!cfg) return <div className="page">加载中…</div>;
-
-  const providers = Object.keys(cfg.providers);
-  // Key 标识列表只随 cfg 变化时重建，避免每次输入/下拉变化都重算所有 options
+  // ⚠️ 所有 hooks 必须放在条件 return 之前（否则组件在 cfg 从 null→有值时
+  // hook 数量不一致，触发 React error #310 → 整棵组件树卸载 → 空白）
   const providerIds = useMemo(() => {
     const m: Record<string, string[]> = {};
-    for (const p of Object.keys(cfg.providers)) {
-      m[p] = (cfg.providers[p]?.keys || []).map((k) => k.id);
+    if (cfg) {
+      for (const p of Object.keys(cfg.providers)) {
+        m[p] = (cfg.providers[p]?.keys || []).map((k) => k.id);
+      }
     }
     return m;
   }, [cfg]);
+
+  if (!cfg) return <div className="page">加载中…</div>;
+
+  const providers = Object.keys(cfg.providers);
 
   const save = async () => {
     setBusy(true);
