@@ -10,9 +10,17 @@ import {
 
 // ---------------- 通用小组件 ----------------
 
-export function StatusDot({ u }: { u: UsageInfo | null }) {
-  const color = !u || u.status === "error" || u.status === "disabled" ? "#dc2626" : "#16a34a";
+export function StatusDot({ u, exhausted }: { u: UsageInfo | null; exhausted?: boolean }) {
+  const color = exhausted || !u || u.status === "error" || u.status === "disabled" ? "#dc2626" : "#16a34a";
   return <span className="dot" style={{ background: color }} />;
+}
+
+// 与后端 is_exhausted 一致的判定：percent 型任一维度>=阈值即不可用；balance 型余额低于下限
+function isExhaustedFor(u: UsageInfo, trigger: number, minBalance: number): boolean {
+  if (u.status === "error" || u.status === "disabled") return true;
+  if (u.kind === "balance") return (u.balance ?? 999) < minBalance;
+  const max = Math.max(u.percent ?? 0, u.weekly ?? 0, u.monthly ?? 0);
+  return max >= trigger;
 }
 
 // 把 ISO 重置时间转成“X 天 X 小时 / X 小时 X 分钟”的中文描述
@@ -239,6 +247,9 @@ export function OverviewPage() {
                 const users = keyUsers[`${p}::${k.id}`] || [];
                 const inUse = users.length ? `在用: ${users.join("、")}` : "未使用";
                 const note = k.note ? ` · 备注: ${k.note}` : "";
+                const trigger = cfg.auto_switch?.trigger_percent ?? 99;
+                const minBal = cfg.thresholds?.[p]?.balance_min ?? 5;
+                const exhausted = s?.usage ? isExhaustedFor(s.usage, trigger, minBal) : false;
                 return (
                   <div className="card" key={`${p}::${k.id}`}>
                     <div className="card-title">
@@ -248,7 +259,8 @@ export function OverviewPage() {
                       <>
                         <UsageBars u={s.usage} />
                         <div className="card-sub">
-                          <StatusDot u={s.usage} /> 状态: {s.usage.status} · {inUse}{note}
+                          <StatusDot u={s.usage} exhausted={exhausted} /> 状态:{" "}
+                          {exhausted ? "不可用(达阈值)" : s.usage.status} · {inUse}{note}
                         </div>
                       </>
                     ) : (
