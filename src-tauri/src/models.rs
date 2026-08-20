@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{LazyLock, Mutex};
+use std::time::SystemTime;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Config {
@@ -113,14 +115,34 @@ pub fn config_path() -> PathBuf {
     base.join("KeySwitch").join("config.toml")
 }
 
+/// 配置内存缓存：以文件修改时间(mtime)作为失效依据。
+/// 文件没变就复用内存里的 Config（省去每次命令重复读盘 + TOML 解析），
+/// 外部修改（手改 / 迁移脚本）会因 mtime 变化而自动重新加载，保证一致。
+static CONFIG_CACHE: LazyLock<Mutex<Option<(Option<SystemTime>, Config)>>> =
+    LazyLock::new(|| Mutex::new(None));
+
 pub fn load_config() -> Result<Config, String> {
     let path = config_path();
     if !path.exists() {
         return Err(format!("配置不存在: {}（请先运行迁移脚本导入）", path.display()));
     }
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| format!("读取配置失败: {e}"))?;
-    toml::from_str(&text).map_err(|e| format!("解析配置失败: {e}"))
+    let mtime = std::fs::metadata(&path)
+        .ok()
+        .and_then(|m| m.modified().ok());
+    // 命中缓存（文件未变）则直接复用
+    if let Ok(mut c) = CONFIG_CACHE.lock() {
+        if let Some((t, cfg)) = &*c {
+            if *t == mtime {
+                return Ok(cfg.clone());
+            }
+        }
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("读取配置失败: {e}"))?;
+    let cfg: Config = toml::from_str(&text).map_err(|e| format!("解析配置失败: {e}"))?;
+    if let Ok(mut c) = CONFIG_CACHE.lock() {
+        *c = Some((mtime, cfg.clone()));
+    }
+    Ok(cfg)
 }
 
 pub fn save_config(cfg: &Config) -> Result<(), String> {
@@ -129,7 +151,13 @@ pub fn save_config(cfg: &Config) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建配置目录失败: {e}"))?;
     }
     let text = toml::to_string_pretty(cfg).map_err(|e| format!("序列化配置失败: {e}"))?;
-    std::fs::write(&path, text).map_err(|e| format!("写入配置失败: {e}"))
+    std::fs::write(&path, text).map_err(|e| format!("写入配置失败: {e}"))?;
+    // 写盘后更新缓存，避免下次 load 重复解析
+    let mtime = std::fs::metadata(&path).ok().and_then(|m| m.modified().ok());
+    if let Ok(mut c) = CONFIG_CACHE.lock() {
+        *c = Some((mtime, cfg.clone()));
+    }
+    Ok(())
 }
 
 impl Config {
