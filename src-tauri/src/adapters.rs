@@ -279,7 +279,7 @@ impl Adapter for OpenChatCutAdapter {
 
 pub struct WorkBuddyAdapter;
 impl Adapter for WorkBuddyAdapter {
-    fn write_key(&self, provider: &str, key: &str) -> WriteResult {
+    fn write_key(&self, _provider: &str, key: &str) -> WriteResult {
         let path = home().join(".workbuddy/models.json");
         let mut arr: Vec<serde_json::Value> = if path.exists() {
             serde_json::from_str(&read_text(&path)).unwrap_or_default()
@@ -547,6 +547,7 @@ pub fn build_adapter(t: &Target) -> Result<Box<dyn Adapter>, String> {
 }
 
 /// 应用单个软件的 mapping（写该软件所有映射的 key）
+#[allow(dead_code)] // 预留：批量应用单个 target（当前由 commands.apply_targets 覆盖）
 pub fn apply_target(cfg: &Config, t: &Target) -> (Vec<WriteResult>, Vec<String>) {
     let mut results = Vec::new();
     let mut restart = Vec::new();

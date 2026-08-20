@@ -130,7 +130,7 @@ pub fn load_config() -> Result<Config, String> {
         .ok()
         .and_then(|m| m.modified().ok());
     // 命中缓存（文件未变）则直接复用
-    if let Ok(mut c) = CONFIG_CACHE.lock() {
+    if let Ok(c) = CONFIG_CACHE.lock() {
         if let Some((t, cfg)) = &*c {
             if *t == mtime {
                 return Ok(cfg.clone());
