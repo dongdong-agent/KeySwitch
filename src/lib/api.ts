@@ -71,7 +71,7 @@ export interface ApplyResult {
 }
 export interface SwitchEvent {
   provider: string;
-  toProvider: string;
+  to_provider: string;
   from: string;
   to: string;
   targets: string[];
@@ -81,7 +81,7 @@ export interface SmartResult {
   switches: SwitchEvent[];
   exhausted: string[];
   checked: number;
-  queryFailed: string[];
+  query_failed: string[];
 }
 export interface AdapterInfo {
   name: string;

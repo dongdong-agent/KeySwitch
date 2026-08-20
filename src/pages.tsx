@@ -193,16 +193,16 @@ export function OverviewPage() {
         alert(
           `🔄 智能切换完成：\n` +
             r.switches
-              .map((s) => `  ${s.provider}/${s.from} → ${s.toProvider}/${s.to}（软件: ${s.targets.join("、") || "无"}）`)
+              .map((s) => `  ${s.provider}/${s.from} → ${s.to_provider}/${s.to}（软件: ${s.targets.join("、") || "无"}）`)
               .join("\n") +
-            (r.queryFailed.length ? `\n\n⚠️ 查询失败（已按最近数据判定）: ${r.queryFailed.join("、")}` : ``) +
+            (r.query_failed.length ? `\n\n⚠️ 查询失败（已按最近数据判定）: ${r.query_failed.join("、")}` : ``) +
             `\n\n⚠️ 相关软件需重启后使用新 key 生效` +
             (usageLines ? `\n\n当前用量：\n${usageLines}` : ``),
         );
       } else if (r.exhausted.length) {
         alert(`⚠️ 告急但无可用 key: ${r.exhausted.join("、")}\n\n当前用量：\n${usageLines}`);
-      } else if (r.queryFailed.length) {
-        alert(`⚠️ 用量查询失败（403/网络），本次无法判定：${r.queryFailed.join("、")}\n\n当前用量：\n${usageLines}`);
+      } else if (r.query_failed.length) {
+        alert(`⚠️ 用量查询失败（403/网络），本次无法判定：${r.query_failed.join("、")}\n\n当前用量：\n${usageLines}`);
       } else {
         alert(`✅ 检测完成：${r.checked} 个在用 key 全部正常（未达阈值 ${cfg?.auto_switch?.trigger_percent ?? 100}%，无需切换）\n\n当前用量：\n${usageLines}`);
       }
