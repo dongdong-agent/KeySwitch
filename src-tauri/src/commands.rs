@@ -190,6 +190,93 @@ pub async fn apply_targets(new_mappings: HashMap<String, HashMap<String, String>
     .map_err(|e| e.to_string())?
 }
 
+// ---------- 手动切换（总览卡片“使用此 key”按钮） ----------
+
+#[derive(Serialize)]
+pub struct UseKeyResult {
+    pub provider: String,
+    pub key_id: String,
+    /// 写入成功并已更新映射的软件
+    pub targets: Vec<String>,
+    /// 写入失败的软件（mapping 意图仍更新）
+    pub failed: Vec<String>,
+    pub restart: Vec<String>,
+    /// 非空 = 前置校验失败（provider/key 不存在等）
+    pub error: String,
+}
+
+/// 手动切换：把该 provider 下所有「正在使用」的软件统一切换到指定 key。
+/// 只切 mapping[provider] 非空的软件；未使用该 provider 的软件保持原样。
+#[tauri::command]
+pub async fn use_key(provider: String, key_id: String) -> Result<UseKeyResult, String> {
+    // 写多个真实配置文件（文件 IO）较重，放后台线程
+    tauri::async_runtime::spawn_blocking(move || -> Result<UseKeyResult, String> {
+        let mut cfg = crate::models::load_config()?;
+        if !cfg.providers.contains_key(&provider) {
+            return Ok(UseKeyResult {
+                provider: provider.clone(),
+                key_id: key_id.clone(),
+                targets: vec![],
+                failed: vec![],
+                restart: vec![],
+                error: format!("Provider 不存在: {provider}"),
+            });
+        }
+        let new_val = cfg.key_value(&provider, &key_id);
+        if new_val.is_empty() {
+            return Ok(UseKeyResult {
+                provider: provider.clone(),
+                key_id: key_id.clone(),
+                targets: vec![],
+                failed: vec![],
+                restart: vec![],
+                error: format!("未找到 {provider}/{key_id} 的 key 值"),
+            });
+        }
+        let mut ok_targets: Vec<String> = Vec::new();
+        let mut fail_targets: Vec<String> = Vec::new();
+        let mut restart_set: Vec<String> = Vec::new();
+        for t in cfg.targets.iter_mut() {
+            // 该软件未使用此 provider，不动
+            if t.mapping.get(&provider).map(|v| v.is_empty()).unwrap_or(true) {
+                continue;
+            }
+            let adapter = match crate::adapters::build_adapter(t) {
+                Ok(a) => a,
+                Err(_) => {
+                    t.mapping.insert(provider.clone(), key_id.clone());
+                    fail_targets.push(t.name.clone());
+                    continue;
+                }
+            };
+            let r = adapter.write_key(&provider, &new_val);
+            // 无论写入成败都更新意图（与智能切换/保存并应用一致）
+            t.mapping.insert(provider.clone(), key_id.clone());
+            if r.ok {
+                ok_targets.push(t.name.clone());
+                for s in adapter.restart_hint() {
+                    if !restart_set.contains(&s) {
+                        restart_set.push(s);
+                    }
+                }
+            } else {
+                fail_targets.push(t.name.clone());
+            }
+        }
+        crate::models::save_config(&cfg)?;
+        Ok(UseKeyResult {
+            provider: provider.clone(),
+            key_id: key_id.clone(),
+            targets: ok_targets,
+            failed: fail_targets,
+            restart: restart_set,
+            error: String::new(),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ---------- 智能切换 ----------
 
 #[tauri::command]

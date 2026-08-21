@@ -110,6 +110,7 @@ pub fn run() {
             commands::get_actual_keys,
             commands::list_adapters,
             commands::apply_targets,
+            commands::use_key,
             commands::smart_check,
             commands::save_auto_settings,
             commands::add_provider,

@@ -250,6 +250,41 @@ body {
   gap: 6px;
 }
 
+.card-actions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+}
+
+.card-use-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--active);
+  border-radius: 6px;
+  background: #eef2ff;
+  color: var(--active);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.card-use-btn:hover {
+  background: var(--active);
+  color: #fff;
+}
+
+.card-use-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.card-inuse {
+  color: var(--ok);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .dot {
   width: 8px;
   height: 8px;

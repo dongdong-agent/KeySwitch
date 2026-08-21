@@ -261,6 +261,42 @@ export function OverviewPage({ active }: { active?: boolean }) {
     return m;
   }, [cfg]);
 
+  // 手动切换：把该 provider 下所有在用软件统一切换到指定 key（自动切换失败时的兜底）
+  const useKey = async (p: string, kid: string) => {
+    const users = keyUsers[`${p}::${kid}`] || [];
+    if (!users.length) {
+      alert(`当前没有软件在使用 ${p}，无需切换`);
+      return;
+    }
+    if (
+      !confirm(
+        `将把以下 ${users.length} 个软件切换到\n\n  ${p} / ${maskId(kid)}\n\n` +
+          users.map((u) => `  · ${u}`).join("\n") +
+          `\n\n注意：相关软件需重启后才会使用新 key。\n继续吗？`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      const r = await api.useKey(p, kid);
+      if (r.error) {
+        alert(r.error);
+        return;
+      }
+      const lines =
+        r.targets.length > 0 ? r.targets.map((t) => `  ✅ ${t}`).join("\n") : "（无软件在使用该 provider）";
+      const failLines = r.failed.length ? `\n\n❌ 写入失败: ${r.failed.join("、")}` : "";
+      alert(
+        `✅ 已切换到 ${p} / ${maskId(kid)}\n\n${lines}${failLines}\n\n⚠️ 需重启生效: ${r.restart.join("、") || "无"}`,
+      );
+      await load();
+    } catch (e) {
+      msgErr(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="page">
       <h2 className="page-title">总览</h2>
@@ -293,6 +329,20 @@ export function OverviewPage({ active }: { active?: boolean }) {
                     ) : (
                       <div className="card-sub">用量加载中… · {inUse}{note}</div>
                     )}
+                    {/* 手动切换按钮：在用中的显示“✓ 使用中”，其余可一键切换 */}
+                    <div className="card-actions">
+                      {users.length ? (
+                        <span className="card-inuse">✓ 使用中</span>
+                      ) : (
+                        <button
+                          className="card-use-btn"
+                          disabled={busy}
+                          onClick={() => useKey(p, k.id)}
+                        >
+                          ⚡ 使用此 key
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               }),

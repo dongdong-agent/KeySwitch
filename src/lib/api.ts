@@ -69,6 +69,14 @@ export interface ApplyResult {
   results: WriteResult[];
   restart: string[];
 }
+export interface UseKeyResult {
+  provider: string;
+  key_id: string;
+  targets: string[];
+  failed: string[];
+  restart: string[];
+  error: string;
+}
 export interface SwitchEvent {
   provider: string;
   to_provider: string;
@@ -97,6 +105,8 @@ export const api = {
   listAdapters: () => invoke<AdapterInfo[]>("list_adapters"),
   applyTargets: (newMappings: Record<string, Record<string, string>>) =>
     invoke<ApplyResult>("apply_targets", { newMappings }),
+  useKey: (provider: string, keyId: string) =>
+    invoke<UseKeyResult>("use_key", { provider, keyId }),
   smartCheck: (trigger?: number) =>
     invoke<SmartResult>("smart_check", { trigger }),
   saveAutoSettings: (enabled: boolean, triggerPercent: number, intervalMin: number) =>
