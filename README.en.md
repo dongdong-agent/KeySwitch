@@ -3,7 +3,7 @@
 > **API Key Manager** — assign a Provider's Key to each app independently, and auto-switch by priority when usage runs out.
 > Built end-to-end with **Pi (AI coding assistant) + DeepSeek V4 Flash**.
 
-🌐 Languages: [简体中文](README.md) · **English**
+🌐 Languages: [简体中文](README.md) · **English** · [Français](README.fr.md) · [한국어](README.ko.md)
 
 ---
 
@@ -28,7 +28,7 @@ This is the Rust / Tauri 2 rewrite (replacing the Python version at `L:\00-proje
 - **Smart switching**: a background timer checks in-use Key usage, auto-switches to the highest-priority available Key at the threshold (default 100%), switching all apps that use it
   - **Three-dimension check**: rolling / weekly / monthly — **any** dimension hitting the threshold marks the Key exhausted
   - **Cross-provider fallback**: when the same Provider has no available Key, fall back to other Providers in `prefer_providers` order (e.g. opencode-go first, DeepSeek as backup)
-  - **Query-failure protection**: usage query failures (403/network) do **not** trigger a switch, and fall back to the last successful data — avoiding false switches
+  - **Query-failure protection**: Keys whose usage query failed (403/network) are excluded from switch candidates; if the in-use Key fails to query, it switches to a Key that was **successfully queried this round** (same Provider first, otherwise cross-Provider), and only stays put when no usable target exists at all
 - **Priority ordering**: reorder Keys in the Key Pool with ↑↓ (list order = priority)
 - **Self-service management**: add/delete Providers, API Keys, and apps directly in the UI
 - **Key editing**: change Provider / id / value / note / promo link / reward; cross-Provider moves auto-sync app mappings
@@ -89,7 +89,7 @@ KeySwitch uses "adapters" to write Keys back to each app's real config location:
 - **Trigger**: the timer ticks every 30 s, and decides whether to run based on `interval_min` (default 5 min). An in-use Key is considered exhausted when **any** of rolling/weekly/monthly usage ≥ `trigger_percent` (default 100%).
 - **Switch target**: within the same Provider, pick the first available Key by Key Pool priority (list order); if none, fall back across Providers in `prefer_providers` order.
 - **Consistency**: when a Key is switched, all apps whose `mapping` references it are switched together.
-- **False-switch prevention**: on a usage query failure (403 / network error) it does **not** switch, and falls back to the last successful data.
+- **False-switch prevention**: Keys whose usage query failed (403 / network error) are always excluded from switch candidates (avoid switching to a dead Key); if the in-use Key fails to query, it switches to a Key that was **successfully queried this round** (same Provider first, otherwise cross-Provider such as DeepSeek), and only stays put when no usable target exists at all.
 - **Logging**: each auto-check appends a line to `%APPDATA%\KeySwitch\auto-switch.log`, so you can confirm the timer is running.
 
 ---
@@ -157,7 +157,7 @@ Installer output:
 1. **New opencode-go keys need China-hosted model opt-in**: some new accounts get `403 RegionError` when calling deepseek-v4-flash — open the workspace link in the error (`opencode.ai/workspace/<id>/go`) and accept it in the browser.
 2. **Apps must be restarted after a switch**: KeySwitch edits config files / user environment variables; **already-running processes** (PI / DSH / apps) keep the old Key they loaded at startup — restart them to pick up the new Key.
 3. **Tauri argument naming**: `invoke` params use camelCase (backend `key_id` ↔ frontend `keyId`); **command return fields are snake_case** (frontend must use `weekly_reset`, not `weeklyReset`) — the two directions are opposite, don't mix them up.
-4. **Usage API may disagree with real limits**: opencode-go's `/usage` percentage doesn't guarantee usability (may return 429/403) and is intermittently blocked by Cloudflare; KeySwitch already protects against this with "no switch on query failure + fall back to last data".
+4. **Usage API may disagree with real limits**: opencode-go's `/usage` percentage doesn't guarantee usability (may return 429/403) and is intermittently blocked by Cloudflare; KeySwitch excludes Keys whose query failed this round (403/network) from switch candidates, and when the in-use Key fails to query it switches to a Key that was successfully queried (same Provider first, otherwise cross-Provider), staying put only when no usable target exists.
 5. **Apps storing config in WebView storage (e.g. DSH)**: provider/key live in an internal leveldb and can't be edited as files — add them from within the app's UI instead.
 
 ---

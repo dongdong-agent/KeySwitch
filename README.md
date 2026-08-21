@@ -3,7 +3,7 @@
 > **API Key 管理器** —— 给每个软件独立选择 Provider 的 Key，用量耗尽时按优先级智能切换。
 > 由 **Pi（AI 编程助手）+ DeepSeek V4 Flash** 端到端开发。
 
-🌐 语言 / Languages：**简体中文** · [English](README.en.md)
+🌐 语言 / Languages：**简体中文** · [English](README.en.md) · [Français](README.fr.md) · [한국어](README.ko.md)
 
 ---
 
@@ -28,7 +28,7 @@ Rust / Tauri 2 重构版（替代 Python 版 `L:\00-projects\apikey-switcher`）
 - **智能切换**：后台定时检测在用 Key 用量，达到阈值（默认 100%）自动切到优先级最高的可用 Key，所有用它的软件一起切
   - **三维度判定**：滚动 / 周 / 月**任一**达阈值即判定耗尽
   - **跨 Provider 兜底**：同 Provider 无可用 key 时，按 `prefer_providers` 偏好顺序切到其它 Provider（如 opencode-go 优先、DeepSeek 兜底）
-  - **查询失败保护**：用量查询失败（403/网络）不触发切换、回退最近一次成功数据，避免误切
+  - **查询失败保护**：用量查询失败（403/网络）的 key 不做切换候选；在用 key 查询失败会切到「本次查询成功」的可用 key（同 Provider 优先，否则跨 Provider），全都没有可用目标才保持现状
 - **优先级排序**：Key 池 ↑↓ 调整（列表顺序即优先级）
 - **自助管理**：界面直接添加/删除 Provider、API Key、应用
 - **Key 编辑**：可改 Provider / 标识 / 值 / 备注 / 推广链接 / 奖励额度；跨 Provider 迁移自动同步应用映射
@@ -89,7 +89,7 @@ KeySwitch 通过「适配器」把 Key 写回各软件的真实配置位置：
 - **触发条件**：定时器每 30 秒 tick 一次，按配置的 `interval_min`（默认 5 分钟）决定是否执行检测；在用 Key 的滚动/周/月**任一维度**用量 ≥ `trigger_percent`（默认 100%）即判定耗尽。
 - **切换目标**：同 Provider 内按 Key 池优先级（列表顺序）找第一个可用 Key；找不到时按 `prefer_providers` 顺序跨 Provider 兜底。
 - **一致性**：一个 Key 被切换后，所有 `mapping` 里用了它的软件一并切换。
-- **防误切**：用量查询失败（403 / 网络异常）时**不切换**，并回退最近一次成功数据判定，避免因查询失败误切。
+- **防误切**：用量查询失败（403 / 网络异常）的 key 一律排除出切换候选（避免切到已失效的 key）；在用 key 查询失败时，会切到「本次查询成功」且可用的 key（同 Provider 优先，否则跨 Provider 如 DeepSeek），全都没有可用目标才保持现状，避免盲目乱切。
 - **日志**：每次自动检测落一行到 `%APPDATA%\KeySwitch\auto-switch.log`，便于确认定时器在跑。
 
 ---
@@ -157,7 +157,7 @@ npx tauri build
 1. **opencode-go 新 key 需中国托管模型 opt-in**：部分新账户调用 deepseek-v4-flash 返回 `403 RegionError`，需打开报错里的 workspace 链接在网页同意（`opencode.ai/workspace/<id>/go`）。
 2. **切换后应用需重启才生效**：KeySwitch 改的是配置文件/用户环境变量；**已运行的进程**（PI / DSH / 各软件）仍用启动时的旧 key，重启对应进程才用新 key。
 3. **Tauri 参数命名**：`invoke` 入参用 camelCase（后端 `key_id` ↔ 前端 `keyId`）；**命令返回值字段是 snake_case**（前端必须用 `weekly_reset` 而非 `weeklyReset`），两者方向相反，别混。
-4. **用量接口与真实限制可能不一致**：opencode-go 的 `/usage` 返回百分比不代表一定能用（可能 429/403），且被 Cloudflare 间歇性拦截；KeySwitch 已做"查询失败不切换 + 回退最近数据"保护。
+4. **用量接口与真实限制可能不一致**：opencode-go 的 `/usage` 返回百分比不代表一定能用（可能 429/403），且被 Cloudflare 间歇性拦截；KeySwitch 会把「本次查询失败（403/网络）」的 key 排除出切换候选，在用 key 查询失败时切到本次查询成功的可用 key（同 Provider 优先，否则跨 Provider），全都没有可用目标才保持现状。
 5. **WebView 存储的应用（如 DSH）** provider/key 存在内部 leveldb，无法直接改文件，需在应用界面添加。
 
 ---

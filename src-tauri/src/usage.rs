@@ -145,25 +145,35 @@ pub fn query_usage(pcfg: &Provider, key: &str) -> UsageInfo {
 
 /// 带缓存的用量查询：命中（未过期）直接返回缓存，否则真实查询并回填。
 /// 查询失败时回退到最近一次成功数据（若有），避免 403 导致无法判定。
-/// 供智能切换等多次查询场景复用，避免重复 HTTP（用量短期几乎不变）。
-pub fn query_usage_cached(provider: &str, id: &str, pcfg: &Provider, key: &str) -> UsageInfo {
+/// 返回值的第二项 `stale` 表示「本次没有拿到最新成功数据」：查询失败用了旧缓存，
+/// 或缓存里本身就是失败结果。智能切换据此把「本次查询失败」的 key 排除出候选，
+/// 避免切到已失效（如整体 403）的 key。
+pub fn query_usage_cached(
+    provider: &str,
+    id: &str,
+    pcfg: &Provider,
+    key: &str,
+) -> (UsageInfo, bool) {
     let ck = (provider.to_string(), id.to_string());
     if let Some(u) = cache_get(&ck) {
-        return u;
+        // 命中缓存：缓存里是失败结果视为 stale（本次无最新成功数据）
+        let stale = u.status == "error";
+        return (u, stale);
     }
     let u = query_usage(pcfg, key);
     if u.status == "error" {
-        // 本次查询失败：回退最近一次成功数据，保证判定有据可依
+        // 本次查询失败：回退最近一次成功数据，保证判定有据可依（标记 stale）
         if let Ok(c) = USAGE_CACHE.lock() {
             if let Some((_, old)) = c.get(&ck) {
                 if old.status != "error" {
-                    return old.clone();
+                    return (old.clone(), true);
                 }
             }
         }
+        return (u, true);
     }
     cache_set(ck, u.clone());
-    u
+    (u, false)
 }
 
 fn query_balance(pcfg: &Provider, key: &str) -> UsageInfo {

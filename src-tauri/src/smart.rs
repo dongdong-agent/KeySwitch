@@ -33,39 +33,22 @@ pub fn smart_switch_once(
     // 1) 一次查清所有 key 的用量（带缓存），并构建「可用 key」清单（列表顺序=优先级）
     let mut usage_all: std::collections::HashMap<(String, String), usage::UsageInfo> =
         std::collections::HashMap::new();
+    // 本次查询失败（403/网络，数据为旧缓存）的 key：不能确认当前可用，排除出候选
+    let mut usage_stale: std::collections::HashMap<(String, String), bool> =
+        std::collections::HashMap::new();
     let mut query_failed: Vec<String> = Vec::new();
     for (pname, pcfg) in &cfg.providers {
         for k in &pcfg.keys {
-            let u = usage::query_usage_cached(pname, &k.id, pcfg, &k.key);
-            if u.status == "error" {
-                // 无最近成功数据可回退：本次确实查不到
+            let (u, stale) = usage::query_usage_cached(pname, &k.id, pcfg, &k.key);
+            if u.status == "error" || stale {
+                // 本次确实查不到 / 回退旧数据：告知 UI
                 query_failed.push(format!("{pname}/{}", k.id));
             }
+            usage_stale.insert((pname.clone(), k.id.clone()), stale);
             usage_all.insert((pname.clone(), k.id.clone()), u);
         }
     }
-    let mut usable: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new(); // provider -> 可用 key_id（按优先级）
-    for (pname, pcfg) in &cfg.providers {
-        let mut list = Vec::new();
-        for k in &pcfg.keys {
-            if k.key.is_empty() {
-                continue;
-            }
-            let u = usage_all
-                .get(&(pname.clone(), k.id.clone()))
-                .cloned()
-                .unwrap_or_default();
-            // 查询失败（403/网络错误）≠ 耗尽：不做候选，避免误选可能仍可用的 key
-            if u.status == "error" {
-                continue;
-            }
-            if !usage::is_exhausted(cfg, pname, &u, trigger) {
-                list.push(k.id.clone());
-            }
-        }
-        usable.insert(pname.clone(), list);
-    }
+    let usable = build_usable(cfg, trigger, &usage_all, &usage_stale);
 
     // 2) 跨 provider 兜底的偏好顺序：prefer_providers 在前，其余按名称排序
     let mut provider_order: Vec<String> = cfg.providers.keys().cloned().collect();
@@ -100,40 +83,26 @@ pub fn smart_switch_once(
     let mut exhausted = Vec::new();
     let checked = usage_map.len();
     for ((provider, kid), targets) in usage_map {
-        let u = match usage_all.get(&(provider.clone(), kid.clone())) {
+        let ck = (provider.clone(), kid.clone());
+        let u = match usage_all.get(&ck) {
             Some(u) => u.clone(),
             None => continue,
         };
-        // 查询失败（403/网络错误）≠ 耗尽：不触发切换，保持现状（避免误切多花钱）
-        if u.status == "error" {
-            continue;
-        }
-        if !usage::is_exhausted(cfg, &provider, &u, trigger) {
+        // 本次查询失败（403/网络）或回退旧数据（stale）→ 视为「不可用」，尝试切换；
+        // 否则按三维度阈值判定是否耗尽。
+        // 与候选不同：候选只选「本次查询成功」的 key；这里查询失败也触发切换，
+        // 只要存在本次查询成功的可用 key（同 provider 优先，再跨 provider 如 DeepSeek）。
+        let stale = usage_stale.get(&ck).copied().unwrap_or(false);
+        let unavailable = u.status == "error"
+            || stale
+            || usage::is_exhausted(cfg, &provider, &u, trigger);
+        if !unavailable {
             continue;
         }
         exhausted.push(format!("{provider}/{kid}"));
 
         // 候选：先同 provider 内（省钱优先），再跨 provider 兜底（按偏好顺序）
-        let mut best: Option<(String, String)> = None; // (provider, key_id)
-        if let Some(list) = usable.get(&provider) {
-            if let Some(id) = list.iter().find(|id| **id != kid) {
-                best = Some((provider.clone(), id.clone()));
-            }
-        }
-        if best.is_none() {
-            for p in &provider_order {
-                if p == &provider {
-                    continue;
-                }
-                if let Some(list) = usable.get(p) {
-                    if let Some(id) = list.first() {
-                        best = Some((p.clone(), id.clone()));
-                        break;
-                    }
-                }
-            }
-        }
-        let (best_provider, best_id) = match best {
+        let (best_provider, best_id) = match find_best(&usable, &provider, &kid, &provider_order) {
             Some(b) => b,
             None => continue,
         };
@@ -187,6 +156,69 @@ pub fn smart_switch_once(
     }
 }
 
+/// 构建「可用 key」清单：只保留本次查询成功（非 error / 非 stale）且未耗尽的 key。
+/// 列表顺序 = keys 配置顺序 = 优先级。
+/// 「本次查询失败（403/网络）」或「回退旧缓存数据」的 key 一律排除：
+/// 无法确认当前可用，避免切到已失效的 key（如 opencode-go 整体 403）。
+fn build_usable(
+    cfg: &Config,
+    trigger: Option<u64>,
+    usage_all: &std::collections::HashMap<(String, String), usage::UsageInfo>,
+    usage_stale: &std::collections::HashMap<(String, String), bool>,
+) -> std::collections::HashMap<String, Vec<String>> {
+    let mut usable: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new(); // provider -> 可用 key_id（按优先级）
+    for (pname, pcfg) in &cfg.providers {
+        let mut list = Vec::new();
+        for k in &pcfg.keys {
+            if k.key.is_empty() {
+                continue;
+            }
+            let ck = (pname.clone(), k.id.clone());
+            let u = usage_all.get(&ck).cloned().unwrap_or_default();
+            // 查询失败（403/网络错误）→ 不做候选
+            if u.status == "error" {
+                continue;
+            }
+            // 本次无最新成功数据（回退旧缓存）→ 不做候选
+            if usage_stale.get(&ck).copied().unwrap_or(false) {
+                continue;
+            }
+            if !usage::is_exhausted(cfg, pname, &u, trigger) {
+                list.push(k.id.clone());
+            }
+        }
+        usable.insert(pname.clone(), list);
+    }
+    usable
+}
+
+/// 找切换目标：先同 provider 内（排除在用 key，省钱优先），
+/// 再按 provider_order 跨 provider 兜底（列表第一 = 最高优先级）。
+fn find_best(
+    usable: &std::collections::HashMap<String, Vec<String>>,
+    provider: &str,
+    kid: &str,
+    provider_order: &[String],
+) -> Option<(String, String)> {
+    if let Some(list) = usable.get(provider) {
+        if let Some(id) = list.iter().find(|id| **id != kid) {
+            return Some((provider.to_string(), id.clone()));
+        }
+    }
+    for p in provider_order {
+        if p == provider {
+            continue;
+        }
+        if let Some(list) = usable.get(p) {
+            if let Some(id) = list.first() {
+                return Some((p.clone(), id.clone()));
+            }
+        }
+    }
+    None
+}
+
 /// 调整 key 优先级（keys 列表顺序 = 优先级）
 pub fn move_key(cfg: &mut Config, provider: &str, key_id: &str, direction: &str) -> Result<String, String> {
     let keys = match cfg.providers.get_mut(provider) {
@@ -212,3 +244,132 @@ pub fn move_key(cfg: &mut Config, provider: &str, key_id: &str, direction: &str)
     keys.swap(idx, ni);
     Ok(format!("{provider}/{key_id} 已{}（顺序即优先级）", if direction == "up" { "上移" } else { "下移" }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Config, KeyItem, Provider};
+    use crate::usage::UsageInfo;
+    use std::collections::HashMap;
+
+    fn pu(p: Option<u64>, w: Option<u64>, m: Option<u64>) -> UsageInfo {
+        UsageInfo {
+            kind: "percent".into(),
+            percent: p, weekly: w, monthly: m,
+            balance: None, rolling_reset: None, weekly_reset: None, monthly_reset: None,
+            status: "ok".into(),
+            detail: "x".into(),
+        }
+    }
+
+    fn balance_ok(v: f64) -> UsageInfo {
+        UsageInfo {
+            kind: "balance".into(),
+            percent: None, weekly: None, monthly: None,
+            balance: Some(v), rolling_reset: None, weekly_reset: None, monthly_reset: None,
+            status: "ok".into(),
+            detail: "".into(),
+        }
+    }
+
+    /// opencode-go: k1 本次查询成功可用(50%) / k2 回退旧数据(stale,50%) /
+    /// k3 查询失败(error) / k4 三维度耗尽(100%)
+    /// deepseek: d1 余额充足(100)
+    fn basic_usable() -> (
+        Config,
+        HashMap<(String, String), UsageInfo>,
+        HashMap<(String, String), bool>,
+        HashMap<String, Vec<String>>,
+    ) {
+        let mut cfg = Config::default();
+        cfg.providers.insert("opencode-go".into(), Provider {
+            base_url: "u".into(), usage_type: "percent".into(),
+            keys: (1..=4).map(|i| KeyItem {
+                id: format!("k{i}"), key: format!("sk{i}"), note: "".into(), promo_url: None, reward: None,
+            }).collect(),
+        });
+        cfg.providers.insert("deepseek".into(), Provider {
+            base_url: "u".into(), usage_type: "balance".into(),
+            keys: vec![KeyItem { id: "d1".into(), key: "skd".into(), note: "".into(), promo_url: None, reward: None }],
+        });
+        let mut usage_all = HashMap::new();
+        usage_all.insert(("opencode-go".into(), "k1".into()), pu(Some(50), None, None));
+        usage_all.insert(("opencode-go".into(), "k2".into()), pu(Some(50), None, None)); // stale
+        let mut e3 = pu(None, None, None);
+        e3.status = "error".into();
+        usage_all.insert(("opencode-go".into(), "k3".into()), e3);
+        usage_all.insert(("opencode-go".into(), "k4".into()), pu(Some(100), Some(100), Some(100))); // 耗尽
+        usage_all.insert(("deepseek".into(), "d1".into()), balance_ok(100.0));
+        let mut usage_stale = HashMap::new();
+        usage_stale.insert(("opencode-go".into(), "k2".into()), true);
+        let usable = build_usable(&cfg, Some(100), &usage_all, &usage_stale);
+        (cfg, usage_all, usage_stale, usable)
+    }
+
+    #[test]
+    fn usable_excludes_error_stale_and_exhausted() {
+        let (_, _, _, usable) = basic_usable();
+        // 只剩 k1（本次查询成功且未耗尽）；k2 stale、k3 error、k4 耗尽全被排除
+        assert_eq!(usable.get("opencode-go"), Some(&vec!["k1".to_string()]));
+        assert_eq!(usable.get("deepseek"), Some(&vec!["d1".to_string()]));
+    }
+
+    #[test]
+    fn opencode_go_all_failed_falls_back_to_deepseek() {
+        // 东哥场景：opencode-go 整体 403，全部回退旧缓存（stale）→
+        // usable 中 opencode-go 为空，目标必须落到本次查询成功的 DeepSeek
+        let mut cfg = Config::default();
+        cfg.providers.insert("opencode-go".into(), Provider {
+            base_url: "u".into(), usage_type: "percent".into(),
+            keys: vec![KeyItem { id: "k1".into(), key: "sk1".into(), note: "".into(), promo_url: None, reward: None }],
+        });
+        cfg.providers.insert("deepseek".into(), Provider {
+            base_url: "u".into(), usage_type: "balance".into(),
+            keys: vec![KeyItem { id: "d1".into(), key: "skd".into(), note: "".into(), promo_url: None, reward: None }],
+        });
+        let mut usage_all = HashMap::new();
+        // 旧缓存显示 80%（未耗尽），但本次查询失败 → stale
+        usage_all.insert(("opencode-go".into(), "k1".into()), pu(Some(80), None, None));
+        usage_all.insert(("deepseek".into(), "d1".into()), balance_ok(100.0));
+        let mut usage_stale = HashMap::new();
+        usage_stale.insert(("opencode-go".into(), "k1".into()), true);
+        let usable = build_usable(&cfg, Some(100), &usage_all, &usage_stale);
+        assert!(usable.get("opencode-go").unwrap().is_empty());
+        assert_eq!(usable.get("deepseek"), Some(&vec!["d1".to_string()]));
+
+        let order = vec!["opencode-go".to_string(), "deepseek".to_string()];
+        let best = find_best(&usable, "opencode-go", "k1", &order);
+        assert_eq!(best, Some(("deepseek".to_string(), "d1".to_string())));
+    }
+
+    #[test]
+    fn find_best_prefers_same_provider_then_fallback() {
+        let usable = HashMap::from([
+            ("p1".to_string(), vec!["a".to_string(), "b".to_string()]),
+            ("p2".to_string(), vec!["z".to_string()]),
+        ]);
+        let order = vec!["p1".to_string(), "p2".to_string()];
+        // 在用 b → 同 provider 第一个 != b 的是 a
+        assert_eq!(find_best(&usable, "p1", "b", &order), Some(("p1".to_string(), "a".to_string())));
+        // 在用 a → p1 只剩 b
+        assert_eq!(find_best(&usable, "p1", "a", &order), Some(("p1".to_string(), "b".to_string())));
+        // 在用 key 不在 usable（已耗尽）→ 选 p1 第一个可用
+        assert_eq!(find_best(&usable, "p1", "gone", &order), Some(("p1".to_string(), "a".to_string())));
+    }
+
+    #[test]
+    fn find_best_cross_provider_follows_order() {
+        let usable = HashMap::from([
+            ("p1".to_string(), Vec::<String>::new()),
+            ("p2".to_string(), vec!["z".to_string()]),
+            ("p3".to_string(), vec!["y".to_string()]),
+        ]);
+        // 顺序 p3 在前 → 跨 provider 先看 p3
+        let order = vec!["p3".to_string(), "p2".to_string()];
+        assert_eq!(find_best(&usable, "p1", "a", &order), Some(("p3".to_string(), "y".to_string())));
+        // 顺序里没有的 provider 跳过、全空 → None
+        let order2 = vec!["nope".to_string()];
+        assert_eq!(find_best(&usable, "p1", "a", &order2), None);
+    }
+}
+
