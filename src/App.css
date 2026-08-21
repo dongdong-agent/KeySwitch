@@ -60,7 +60,10 @@ body {
 }
 
 .nav-logo {
-  font-size: 26px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  flex-shrink: 0;
 }
 
 .nav-title {

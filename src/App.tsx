@@ -1,5 +1,6 @@
 import { useState, type ComponentType } from "react";
 import "./App.css";
+import logo from "./assets/keyswitch-logo.png";
 import {
   OverviewPage,
   MatrixPage,
@@ -43,7 +44,7 @@ function App() {
     <div className="app">
       <nav className="nav">
         <div className="nav-brand">
-          <span className="nav-logo">🔑</span>
+          <img className="nav-logo" src={logo} alt="KeySwitch" />
           <div>
             <div className="nav-title">KeySwitch</div>
             <div className="nav-sub">API Key 管理器</div>
