@@ -1,0 +1,11 @@
+# 真实配置含 API Key，绝不入库
+config/config.yaml
+*.log
+
+# 打包产物
+dist/
+build/
+
+# Python 缓存
+__pycache__/
+*.pyc

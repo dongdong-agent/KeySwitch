@@ -1,0 +1,36 @@
+# KeySwitch 配置模板（示例，不含真实 Key）
+# 复制为 config/config.yaml 后按需填写，或在界面中添加。
+thresholds:
+  opencode-go:
+    percent: 90
+  deepseek:
+    balance_min: 5
+providers:
+  opencode-go:
+    base_url: https://opencode.ai/zen/go/v1
+    usage_type: percent
+    keys:
+    - id: opencode-1
+      key: sk-你的key1
+      note: 示例
+    - id: opencode-2
+      key: sk-你的key2
+      note: 备用
+  deepseek:
+    base_url: https://api.deepseek.com
+    usage_type: balance
+    keys:
+    - id: deepseek-1
+      key: sk-你的deepseek-key
+      note: 示例
+targets:
+- name: my_app
+  adapter: env_var
+  env: OPENCODE_GO_API_KEY
+  label: 我的软件
+  mapping:
+    opencode-go: opencode-1
+auto_switch:
+  enabled: false
+  interval_min: 5
+  trigger_percent: 100
