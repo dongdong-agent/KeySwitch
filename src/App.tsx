@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, type ComponentType } from "react";
 import "./App.css";
 import {
   OverviewPage,
@@ -18,19 +18,20 @@ const PAGES = [
   { id: "settings", icon: "⚙️", label: "设置" },
 ];
 
-const PAGES_ELEM: Record<string, ReactNode> = {
-  overview: <OverviewPage />,
-  matrix: <MatrixPage />,
-  providers: <ProvidersPage />,
-  keys: <KeysPage />,
-  apps: <AppsPage />,
-  settings: <SettingsPage />,
+// 页面组件引用（保持常驻挂载，切回时通过 active 触发重新加载）
+const PAGES_ELEM: Record<string, ComponentType<{ active?: boolean }>> = {
+  overview: OverviewPage,
+  matrix: MatrixPage,
+  providers: ProvidersPage,
+  keys: KeysPage,
+  apps: AppsPage,
+  settings: SettingsPage,
 };
 
 function App() {
   const [page, setPage] = useState("overview");
   // 记录已访问过的页面：首次进入才挂载，之后常驻 DOM（display 显隐切换），
-  // 切走不卸载、切回不重新拉数据 —— 根治切页卡顿/空白/重复请求
+  // 切走不卸载、切回时通过 active 触发重新加载 —— 既不卡顿又能同步其它页面的修改
   const [visited, setVisited] = useState<Record<string, boolean>>({ overview: true });
 
   const open = (id: string) => {
@@ -61,13 +62,13 @@ function App() {
         <div className="nav-footer">Rust / Tauri 2</div>
       </nav>
       <main className="content">
-        {Object.entries(PAGES_ELEM).map(([id, el]) => (
+        {Object.entries(PAGES_ELEM).map(([id, Comp]) => (
           <div
             key={id}
             className="page-slot"
             style={{ display: page === id ? "block" : "none" }}
           >
-            {visited[id] ? el : null}
+            {visited[id] ? <Comp active={page === id} /> : null}
           </div>
         ))}
       </main>

@@ -1,6 +1,6 @@
 // KeySwitch 页面组件（总览 / Key配置 / Provider / Key池 / 应用 / 设置）
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   Config,
@@ -146,7 +146,18 @@ function msgErr(e: unknown) {
 
 // ---------------- 总览 ----------------
 
-export function OverviewPage() {
+// 页面切回（重新激活）时触发重新加载：避免跨页数据不同步（如 Key 池新增后总览不显示）
+function useActiveRefresh(active: boolean | undefined, load: () => void) {
+  const prev = useRef(active);
+  useEffect(() => {
+    if (active && !prev.current) {
+      load();
+    }
+    prev.current = active;
+  }, [active]);
+}
+
+export function OverviewPage({ active }: { active?: boolean }) {
   const [status, setStatus] = useState<KeyStatus[]>([]);
   const [actual, setActual] = useState<Record<string, Record<string, string>>>({});
   const [cfg, setCfg] = useState<Config | null>(null);
@@ -176,6 +187,8 @@ export function OverviewPage() {
   useEffect(() => {
     load();
   }, []);
+  // 切回总览时刷新（同步其它页面如 Key 池的新增）
+  useActiveRefresh(active, load);
 
   const saveAuto = async () => {
     if (!cfg) return;
@@ -360,7 +373,7 @@ export function OverviewPage() {
 
 // ---------------- Key 配置（核心表格） ----------------
 
-export function MatrixPage() {
+export function MatrixPage({ active }: { active?: boolean }) {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [actual, setActual] = useState<Record<string, Record<string, string>>>({});
   const [sel, setSel] = useState<Record<string, string>>({});
@@ -385,6 +398,8 @@ export function MatrixPage() {
   useEffect(() => {
     load();
   }, []);
+  // 切回 Key 配置时刷新（同步其它页面修改）
+  useActiveRefresh(active, load);
 
   // ⚠️ 所有 hooks 必须放在条件 return 之前（否则组件在 cfg 从 null→有值时
   // hook 数量不一致，触发 React error #310 → 整棵组件树卸载 → 空白）
@@ -484,7 +499,7 @@ export function MatrixPage() {
 
 // ---------------- Provider 管理 ----------------
 
-export function ProvidersPage() {
+export function ProvidersPage({ active }: { active?: boolean }) {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState("");
@@ -495,6 +510,8 @@ export function ProvidersPage() {
   useEffect(() => {
     load();
   }, []);
+  // 切回时刷新（同步其它页面修改）
+  useActiveRefresh(active, load);
 
   const add = async () => {
     try {
@@ -582,7 +599,7 @@ export function ProvidersPage() {
 
 // ---------------- Key 池（优先级排序） ----------------
 
-export function KeysPage() {
+export function KeysPage({ active }: { active?: boolean }) {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [selKey, setSelKey] = useState<string | null>(null); // `${provider}::${keyId}`
   const [showAdd, setShowAdd] = useState(false);
@@ -605,6 +622,8 @@ export function KeysPage() {
   useEffect(() => {
     load();
   }, []);
+  // 切回时刷新（同步其它页面修改）
+  useActiveRefresh(active, load);
 
   // 打开编辑框：填入当前 key 的 provider/标识/值/备注
   const openEdit = (provider: string, id: string) => {
@@ -858,7 +877,7 @@ export function KeysPage() {
 
 // ---------------- 应用管理 ----------------
 
-export function AppsPage() {
+export function AppsPage({ active }: { active?: boolean }) {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [adapters, setAdapters] = useState<{ name: string; description: string }[]>([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -876,6 +895,8 @@ export function AppsPage() {
   useEffect(() => {
     load();
   }, []);
+  // 切回时刷新（同步其它页面修改）
+  useActiveRefresh(active, load);
 
   const add = async () => {
     try {
