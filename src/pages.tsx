@@ -38,6 +38,20 @@ function fmtReset(iso: string | null): string {
   return `${mins} 分钟`;
 }
 
+// 标识脱敏：邮箱/长标识在非编辑态隐藏（前3字符 + *** + 域名/后缀），仅编辑时完整显示
+function maskId(id: string): string {
+  if (!id) return id;
+  if (id.includes('@')) {
+    const at = id.indexOf('@');
+    const local = id.slice(0, at);
+    const domain = id.slice(at); // 含 @
+    const l = local.length <= 4 ? local : local.slice(0, 4);
+    return `${l}***${domain}`;
+  }
+  if (id.length > 14) return `${id.slice(0, 6)}…${id.slice(-4)}`;
+  return id;
+}
+
 // 用量可视化：滚动 / 每周 / 每月 三根进度条 + 重置倒计时（参考 opencode 用量条样式）
 function UsageBars({ u }: { u: UsageInfo | null }) {
   if (!u) return <div className="card-sub">用量加载中…</div>;
@@ -182,18 +196,18 @@ export function OverviewPage() {
       const usageLines = status
         .map((s) => {
           const u = s.usage;
-          if (!u) return `  ${s.provider}/${s.id}: 未配置`;
+          if (!u) return `  ${s.provider}/${maskId(s.id)}: 未配置`;
           if (u.kind === "balance")
-            return `  ${s.provider}/${s.id}: 余额 ${u.balance != null ? u.balance.toFixed(2) : "?"}`;
+            return `  ${s.provider}/${maskId(s.id)}: 余额 ${u.balance != null ? u.balance.toFixed(2) : "?"}`;
           const pct = [u.percent, u.weekly, u.monthly].filter((v) => v != null).join("/");
-          return `  ${s.provider}/${s.id}: 滚动/周/月 = ${pct || "?"}%`;
+          return `  ${s.provider}/${maskId(s.id)}: 滚动/周/月 = ${pct || "?"}%`;
         })
         .join("\n");
       if (r.switches.length) {
         alert(
           `🔄 智能切换完成：\n` +
             r.switches
-              .map((s) => `  ${s.provider}/${s.from} → ${s.to_provider}/${s.to}（软件: ${s.targets.join("、") || "无"}）`)
+              .map((s) => `  ${s.provider}/${maskId(s.from)} → ${s.to_provider}/${maskId(s.to)}（软件: ${s.targets.join("、") || "无"}）`)
               .join("\n") +
             (r.query_failed.length ? `\n\n⚠️ 查询失败（已按最近数据判定）: ${r.query_failed.join("、")}` : ``) +
             `\n\n⚠️ 相关软件需重启后使用新 key 生效` +
@@ -253,7 +267,7 @@ export function OverviewPage() {
                 return (
                   <div className="card" key={`${p}::${k.id}`}>
                     <div className="card-title">
-                      {p} / {k.id}
+                      {p} / {maskId(k.id)}
                     </div>
                     {s?.usage ? (
                       <>
@@ -705,7 +719,7 @@ export function KeysPage() {
                 >
                   <td className="cell-prio">{i + 1}</td>
                   <td>{p}</td>
-                  <td>{k.id}</td>
+                  <td>{maskId(k.id)}</td>
                   <td>
                     {k.key ? `${k.key.slice(0, 8)}…${k.key.slice(-4)}` : "(空)"}
                   </td>
@@ -943,7 +957,7 @@ export function AppsPage() {
               <td>
                 {Object.entries(t.mapping)
                   .filter(([, v]) => v)
-                  .map(([p, v]) => `${p}=${v}`)
+                  .map(([p, v]) => `${p}=${maskId(v)}`)
                   .join(", ") || "(未指定)"}
               </td>
               <td>
@@ -1004,7 +1018,7 @@ export function AppsPage() {
                 >
                   {["__none__", ...(cfg.providers[p]?.keys.map((k) => k.id) || [])].map((id) => (
                     <option key={id} value={id}>
-                      {id === "__none__" ? "不使用" : id}
+                      {id === "__none__" ? "不使用" : maskId(id)}
                     </option>
                   ))}
                 </select>
